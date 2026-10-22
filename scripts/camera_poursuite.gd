@@ -8,7 +8,8 @@ extends Camera3D
 @export var distance := 6.5
 @export var hauteur := 2.2
 @export var fov_min := 68.0
-@export var fov_max := 112.0  ## atteint en plein boost
+@export var fov_max := 112.0  ## atteint à pleine vitesse
+@export var fov_distorsion := 130.0  ## champ de vision pendant le boost : l'espace semble se déformer
 @export var recul_max := 3.0  ## la caméra « décroche » quand le boost démarre
 
 var _cap_camera := 0.0
@@ -39,6 +40,8 @@ func _physics_process(delta: float) -> void:
 	# 3. Le champ de vision s'élargit avec la vitesse : c'est l'effet le plus fort.
 	var ratio := clampf(cible.vitesse / cible.vitesse_boost, 0.0, 1.0)
 	var fov_voulu := lerpf(fov_min, fov_max, pow(ratio, 1.4))
+	# Pendant le boost, le champ de vision s'ouvre encore plus : le temps et l'espace se déforment.
+	fov_voulu = lerpf(fov_voulu, fov_distorsion, cible.distorsion)
 	fov = lerpf(fov, fov_voulu, 1.0 - exp(-4.0 * delta))
 
 	# 4. Tremblements : permanents en boost, plus forts lors des chocs.
