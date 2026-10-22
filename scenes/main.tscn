@@ -1,12 +1,13 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://cn6jmb6dwf0am"]
 
 [ext_resource type="PackedScene" path="res://scenes/vehicule.tscn" id="1_vehicule"]
-[ext_resource type="Script" path="res://scripts/circuit.gd" id="2_circuit"]
-[ext_resource type="Script" path="res://scripts/camera_poursuite.gd" id="3_camera"]
-[ext_resource type="Script" path="res://scripts/son_moteur.gd" id="4_son"]
-[ext_resource type="Script" path="res://scripts/hud.gd" id="5_hud"]
-[ext_resource type="Shader" path="res://shaders/contours.gdshader" id="6_contours"]
-[ext_resource type="Shader" path="res://shaders/lignes_vitesse.gdshader" id="7_lignes"]
+[ext_resource type="Script" uid="uid://bka3vivge0cua" path="res://scripts/circuit.gd" id="2_circuit"]
+[ext_resource type="Script" uid="uid://42tdkgdsqm81" path="res://scripts/camera_poursuite.gd" id="3_camera"]
+[ext_resource type="Script" uid="uid://cm7yk562hfm0b" path="res://scripts/son_moteur.gd" id="4_son"]
+[ext_resource type="Script" uid="uid://b6icoepq7vnxm" path="res://scripts/hud.gd" id="5_hud"]
+[ext_resource type="Shader" uid="uid://bwy5xhxj5gn14" path="res://shaders/contours.gdshader" id="6_contours"]
+[ext_resource type="Shader" uid="uid://1f812xse2hra" path="res://shaders/lignes_vitesse.gdshader" id="7_lignes"]
+[ext_resource type="Shader" uid="uid://b5rev2jrvv3cb" path="res://shaders/tunnel.gdshader" id="8_tunnel"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ciel_matiere"]
 sky_top_color = Color(0.13, 0.06, 0.24, 1)
@@ -35,48 +36,67 @@ adjustment_enabled = true
 adjustment_contrast = 1.1
 adjustment_saturation = 1.25
 
-[sub_resource type="QuadMesh" id="ecran"]
-size = Vector2(2, 2)
-
 [sub_resource type="ShaderMaterial" id="contours_matiere"]
 render_priority = 10
 shader = ExtResource("6_contours")
+shader_parameter/couleur = Color(0.04, 0.02, 0.05, 1)
+shader_parameter/epaisseur = 1.5
+shader_parameter/seuil_profondeur = 0.12
+shader_parameter/seuil_normales = 0.6
+shader_parameter/distance_fondu = 400.0
+
+[sub_resource type="QuadMesh" id="ecran"]
+size = Vector2(2, 2)
+
+[sub_resource type="ShaderMaterial" id="tunnel_matiere"]
+shader = ExtResource("8_tunnel")
+shader_parameter/intensite = 0.0
+shader_parameter/rayon_net = 0.35
+shader_parameter/douceur = 1.2
+shader_parameter/flou_radial = 0.12
+shader_parameter/aberration = 0.015
+shader_parameter/assombrissement = 0.8
+shader_parameter/couleur_bord = Vector3(0.03, 0.01, 0.05)
 
 [sub_resource type="ShaderMaterial" id="lignes_matiere"]
 shader = ExtResource("7_lignes")
 shader_parameter/intensite = 0.0
+shader_parameter/nombre_lignes = 140.0
+shader_parameter/couleur = Color(1, 0.97, 0.9, 0.85)
 
 [sub_resource type="StyleBoxFlat" id="jauge_fond"]
 bg_color = Color(0.05, 0.03, 0.08, 0.7)
+skew = Vector2(0.4, 0)
 border_width_left = 3
 border_width_top = 3
 border_width_right = 3
 border_width_bottom = 3
 border_color = Color(0.05, 0.02, 0.05, 1)
-skew = Vector2(0.4, 0)
 
 [sub_resource type="StyleBoxFlat" id="jauge_remplissage"]
 bg_color = Color(0.3, 0.95, 1, 1)
 skew = Vector2(0.4, 0)
 
-[node name="Main" type="Node3D"]
+[node name="Main" type="Node3D" unique_id=1674307268]
 
-[node name="Environnement" type="WorldEnvironment" parent="."]
+[node name="Environnement" type="WorldEnvironment" parent="." unique_id=1973358607]
 environment = SubResource("environnement")
 
-[node name="Soleil" type="DirectionalLight3D" parent="."]
+[node name="Soleil" type="DirectionalLight3D" parent="." unique_id=53439426]
 transform = Transform3D(-0.9396926, -0.21056868, 0.2695156, 0, 0.7880108, 0.6156615, -0.3420202, 0.5785326, -0.74048793, 0, 50, 0)
 light_color = Color(1, 0.8, 0.6, 1)
 light_energy = 1.3
 shadow_enabled = true
 directional_shadow_max_distance = 250.0
 
-[node name="Circuit" type="Node3D" parent="."]
+[node name="Circuit" type="Node3D" parent="." unique_id=1634098755 node_paths=PackedStringArray("vehicule", "environnement")]
 script = ExtResource("2_circuit")
+vehicule = NodePath("../Vehicule")
+environnement = NodePath("../Environnement")
 
-[node name="Vehicule" parent="." instance=ExtResource("1_vehicule")]
+[node name="Vehicule" parent="." unique_id=1169645437 instance=ExtResource("1_vehicule")]
 
-[node name="Camera" type="Camera3D" parent="." node_paths=PackedStringArray("cible")]
+[node name="Camera" type="Camera3D" parent="." unique_id=68099149 node_paths=PackedStringArray("cible")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 6.5)
 current = true
 fov = 68.0
@@ -84,22 +104,34 @@ far = 1800.0
 script = ExtResource("3_camera")
 cible = NodePath("../Vehicule")
 
-[node name="Contours" type="MeshInstance3D" parent="Camera"]
-mesh = SubResource("ecran")
+[node name="Contours" type="MeshInstance3D" parent="Camera" unique_id=1938512424]
 material_override = SubResource("contours_matiere")
 cast_shadow = 0
 extra_cull_margin = 16384.0
+mesh = SubResource("ecran")
 
-[node name="SonMoteur" type="AudioStreamPlayer" parent="." node_paths=PackedStringArray("vehicule")]
+[node name="SonMoteur" type="AudioStreamPlayer" parent="." unique_id=1315242076 node_paths=PackedStringArray("vehicule")]
 volume_db = -6.0
 script = ExtResource("4_son")
 vehicule = NodePath("../Vehicule")
+frequence_ralenti = 20.0
+frequence_max = 120.0
 
-[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("vehicule")]
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1035507410 node_paths=PackedStringArray("vehicule")]
 script = ExtResource("5_hud")
 vehicule = NodePath("../Vehicule")
 
-[node name="LignesVitesse" type="ColorRect" parent="HUD"]
+[node name="Tunnel" type="ColorRect" parent="HUD" unique_id=380110072]
+visible = false
+material = SubResource("tunnel_matiere")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LignesVitesse" type="ColorRect" parent="HUD" unique_id=478513261]
 material = SubResource("lignes_matiere")
 anchors_preset = 15
 anchor_right = 1.0
@@ -108,7 +140,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="Compteur" type="Label" parent="HUD"]
+[node name="Compteur" type="Label" parent="HUD" unique_id=931988833]
 anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
@@ -127,7 +159,7 @@ theme_override_font_sizes/font_size = 64
 text = "0 km/h"
 horizontal_alignment = 2
 
-[node name="Jauge" type="ProgressBar" parent="HUD"]
+[node name="Jauge" type="ProgressBar" parent="HUD" unique_id=1614742079]
 anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
@@ -144,7 +176,7 @@ theme_override_styles/fill = SubResource("jauge_remplissage")
 value = 100.0
 show_percentage = false
 
-[node name="Aide" type="Label" parent="HUD"]
+[node name="Aide" type="Label" parent="HUD" unique_id=1963174378]
 offset_left = 30.0
 offset_top = 24.0
 offset_right = 700.0

@@ -9,6 +9,10 @@ extends AudioStreamPlayer
 @export var frequence_ralenti := 50.0
 @export var frequence_max := 210.0
 
+@export_group("Concentration en boost")
+@export var compensation_volume_db := 6.0  ## remonte le volume pour que l'effet étouffé ne le baisse pas
+@export var clarte_etouffee := 0.03  ## plus c'est petit, plus le son est étouffé
+
 const TAUX := 22050.0
 
 var _lecture: AudioStreamGeneratorPlayback
@@ -16,6 +20,7 @@ var _phase_a := 0.0
 var _phase_b := 0.0
 var _frequence := 50.0
 var _filtre := 0.0
+var _volume_normal := 0.0
 
 
 func _ready() -> void:
@@ -23,6 +28,7 @@ func _ready() -> void:
 	generateur.mix_rate = TAUX
 	generateur.buffer_length = 0.1
 	stream = generateur
+	_volume_normal = volume_db
 	play()
 	_lecture = get_stream_playback()
 
@@ -35,7 +41,12 @@ func _process(delta: float) -> void:
 	var frequence_voulue := frequence_ralenti + (frequence_max - frequence_ralenti) * minf(ratio, 2.3) / 2.3
 	_frequence = lerpf(_frequence, frequence_voulue, 1.0 - exp(-8.0 * delta))
 	var souffle := 0.4 if vehicule.en_boost else 0.04 + ratio * 0.06
-	var clarte := 0.15 + vehicule.gaz * 0.25 + (0.3 if vehicule.en_boost else 0.0)
+	var clarte := 0.15 + vehicule.gaz * 0.25
+
+	# En boost, on devient hyper concentré : le son s'étouffe, sans baisser de volume.
+	var concentration := vehicule.distorsion
+	volume_db = _volume_normal + compensation_volume_db * concentration
+	clarte = lerpf(clarte, clarte_etouffee, concentration)
 
 	for i in _lecture.get_frames_available():
 		_phase_a = fmod(_phase_a + _frequence / TAUX, 1.0)

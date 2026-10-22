@@ -8,8 +8,10 @@ extends Camera3D
 @export var distance := 6.5
 @export var hauteur := 2.2
 @export var fov_min := 68.0
-@export var fov_max := 112.0  ## atteint en plein boost
+@export var fov_max := 112.0  ## atteint à pleine vitesse
+@export var fov_distorsion := 160.0  ## champ de vision pendant le boost : l'espace semble se déformer
 @export var recul_max := 3.0  ## la caméra « décroche » quand le boost démarre
+@export var secousse_pleine_vitesse := 0.08  ## tremblement en plein boost (monte progressivement avec la vitesse)
 
 var _cap_camera := 0.0
 var _vitesse_precedente := 0.0
@@ -39,12 +41,17 @@ func _physics_process(delta: float) -> void:
 	# 3. Le champ de vision s'élargit avec la vitesse : c'est l'effet le plus fort.
 	var ratio := clampf(cible.vitesse / cible.vitesse_boost, 0.0, 1.0)
 	var fov_voulu := lerpf(fov_min, fov_max, pow(ratio, 1.4))
+	# Pendant le boost, le champ de vision s'ouvre encore plus : le temps et l'espace se déforment.
+	fov_voulu = lerpf(fov_voulu, fov_distorsion, cible.distorsion)
 	fov = lerpf(fov, fov_voulu, 1.0 - exp(-4.0 * delta))
 
 	# 4. Tremblements : permanents en boost, plus forts lors des chocs.
-	var amplitude := _secousse + (0.06 if cible.en_boost else 0.0) + ratio * 0.015
+	var secousse_vitesse := pow(ratio, 4.0) * secousse_pleine_vitesse
+	var amplitude := _secousse + (0.06 if cible.en_boost else 0.0) + ratio * 0.015 + secousse_vitesse
 	h_offset = randf_range(-amplitude, amplitude)
 	v_offset = randf_range(-amplitude, amplitude)
+	# À pleine vitesse, l'image penche aussi un peu de gauche à droite.
+	rotate_object_local(Vector3.BACK, randf_range(-1.0, 1.0) * secousse_vitesse * 0.15)
 	_secousse = move_toward(_secousse, 0.0, delta * 1.5)
 
 

@@ -29,6 +29,8 @@ signal teleporte(decalage: Vector3)
 @export var jauge_max := 100.0
 @export var consommation := 30.0  ## par seconde de boost
 @export var recharge := 10.0  ## par seconde sans boost
+@export var attaque_distorsion := 8.0  ## vitesse à laquelle l'effet de boost s'installe
+@export var relachement_distorsion := 2.5  ## vitesse à laquelle il s'efface après le boost
 
 @export_group("Circuit")
 ## Longueur après laquelle on renvoie le bolide au départ. Doit être la même
@@ -39,6 +41,9 @@ var vitesse := 0.0
 var jauge_boost := 100.0
 var en_boost := false
 var gaz := 0.0
+## 0 = conduite normale, 1 = plein effet de boost. La caméra (champ de vision)
+## et le son (concentration) s'en servent pour rester synchronisés.
+var distorsion := 0.0
 
 var _cap := 0.0  # angle du bolide autour de l'axe vertical
 var _temps := 0.0
@@ -63,6 +68,7 @@ func _physics_process(delta: float) -> void:
 		_recommencer()
 
 	_conduire(delta)
+	_mettre_a_jour_distorsion(delta)
 	_garder_sur_la_piste()
 	_boucler_circuit()
 	_animer(delta)
@@ -115,6 +121,11 @@ func _conduire(delta: float) -> void:
 	position += direction * vitesse * delta
 
 
+func _mettre_a_jour_distorsion(delta: float) -> void:
+	var rapidite := attaque_distorsion if en_boost else relachement_distorsion
+	distorsion = lerpf(distorsion, 1.0 if en_boost else 0.0, 1.0 - exp(-rapidite * delta))
+
+
 func _garder_sur_la_piste() -> void:
 	if absf(position.x) <= demi_largeur_piste:
 		_contact_mur = false
@@ -162,3 +173,4 @@ func _recommencer() -> void:
 	vitesse = 0.0
 	_cap = 0.0
 	jauge_boost = jauge_max
+	distorsion = 0.0
