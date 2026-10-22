@@ -1,0 +1,180 @@
+extends Node3D
+## Construit le circuit d'essai par le code : une longue ligne droite dans une
+## ville industrielle rouillée, avec portiques, murets et néons.
+##
+## Le décor est un « motif » de 1200 m tiré au hasard puis recopié bout à bout.
+## Comme il se répète, on peut renvoyer le bolide au début sans que ça se voie
+## (voir _boucler_circuit dans vehicule.gd) : la ligne droite paraît infinie.
+##
+## Pour changer le décor, changer « graine » (un autre tirage au hasard) ou
+## les réglages ci-dessous, puis relancer.
+
+@export var graine := 7
+@export var longueur_motif := 1200.0
+@export var demi_largeur := 15.0
+@export var ecart_portiques := 60.0  ## doit diviser longueur_motif
+@export var nombre_batiments := 70  ## par côté et par motif
+
+const SHADER_TOON := preload("res://shaders/toon.gdshader")
+const SHADER_ROUTE := preload("res://shaders/route.gdshader")
+
+# Palette « grunge SF » : rouilles, bétons sales, bleus-verts passés.
+const COULEURS_BATIMENTS: Array[Color] = [
+	Color(0.55, 0.28, 0.18), Color(0.42, 0.36, 0.32), Color(0.30, 0.40, 0.42),
+	Color(0.62, 0.48, 0.30), Color(0.35, 0.25, 0.35), Color(0.48, 0.20, 0.15),
+]
+const COULEURS_NEONS: Array[Color] = [
+	Color(0.2, 0.9, 1.0), Color(1.0, 0.2, 0.6), Color(1.0, 0.7, 0.1), Color(0.6, 0.3, 1.0),
+]
+
+# Nombre de recopies du motif : une derrière le départ, trois devant.
+const COPIES := [-1, 0, 1, 2]
+
+var _hasard := RandomNumberGenerator.new()
+
+
+func _ready() -> void:
+	_hasard.seed = graine
+	_construire_sol_et_route()
+	_construire_murets()
+	_construire_portiques()
+	_construire_batiments()
+
+
+func _construire_sol_et_route() -> void:
+	var debut := longueur_motif  # derrière le départ
+	var fin: float = -longueur_motif * (COPIES.max() + 1)
+	var longueur := debut - fin
+
+	var route := PlaneMesh.new()
+	route.size = Vector2(demi_largeur * 2.0, longueur)
+	var matiere_route := ShaderMaterial.new()
+	matiere_route.shader = SHADER_ROUTE
+	matiere_route.set_shader_parameter("demi_largeur", demi_largeur)
+	route.material = matiere_route
+	_ajouter_mesh(route, Vector3(0.0, 0.0, (debut + fin) * 0.5))
+
+	var sol := PlaneMesh.new()
+	sol.size = Vector2(3000.0, longueur)
+	sol.material = _matiere(Color(0.45, 0.25, 0.18))
+	_ajouter_mesh(sol, Vector3(0.0, -0.05, (debut + fin) * 0.5))
+
+
+func _construire_murets() -> void:
+	var blocs: Array[Transform3D] = []
+	var neons: Array[Transform3D] = []
+	var couleurs_neons: Array[Color] = []
+	var pas := 6.0
+	var z := 0.0
+	while z > -longueur_motif:
+		for cote in [-1.0, 1.0]:
+			var x: float = cote * (demi_largeur + 0.3)
+			blocs.append(Transform3D(Basis.from_scale(Vector3(0.6, 1.0, pas - 0.5)), Vector3(x, 0.5, z)))
+			neons.append(Transform3D(Basis.from_scale(Vector3(0.65, 0.12, pas - 0.5)), Vector3(x, 1.06, z)))
+			couleurs_neons.append(COULEURS_NEONS[0] if cote < 0.0 else COULEURS_NEONS[1])
+		z -= pas
+
+	_ajouter_en_masse(BoxMesh.new(), blocs, [], _matiere(Color(0.25, 0.24, 0.26)))
+	_ajouter_en_masse(BoxMesh.new(), neons, couleurs_neons, _matiere(Color.WHITE, 4.0))
+
+
+func _construire_portiques() -> void:
+	var piliers: Array[Transform3D] = []
+	var poutres: Array[Transform3D] = []
+	var neons: Array[Transform3D] = []
+	var couleurs_neons: Array[Color] = []
+	var hauteur := 13.0
+	var ecart := demi_largeur + 2.5
+	var z := 0.0
+	var i := 0
+	while z > -longueur_motif:
+		for cote in [-1.0, 1.0]:
+			piliers.append(Transform3D(Basis.from_scale(Vector3(1.6, hauteur, 1.6)), Vector3(cote * ecart, hauteur * 0.5, z)))
+		poutres.append(Transform3D(Basis.from_scale(Vector3(ecart * 2.0 + 1.6, 1.8, 2.2)), Vector3(0.0, hauteur, z)))
+		neons.append(Transform3D(Basis.from_scale(Vector3(ecart * 2.0 - 2.0, 0.35, 0.35)), Vector3(0.0, hauteur - 1.05, z)))
+		couleurs_neons.append(COULEURS_NEONS[i % COULEURS_NEONS.size()])
+		z -= ecart_portiques
+		i += 1
+
+	var metal := _matiere(Color(0.38, 0.34, 0.33))
+	_ajouter_en_masse(BoxMesh.new(), piliers, [], metal)
+	_ajouter_en_masse(BoxMesh.new(), poutres, [], metal)
+	_ajouter_en_masse(BoxMesh.new(), neons, couleurs_neons, _matiere(Color.WHITE, 5.0))
+
+
+func _construire_batiments() -> void:
+	var batiments: Array[Transform3D] = []
+	var couleurs: Array[Color] = []
+	var enseignes: Array[Transform3D] = []
+	var couleurs_enseignes: Array[Color] = []
+
+	for cote in [-1.0, 1.0]:
+		# Bâtiments proches : ils défilent vite et donnent la vitesse.
+		for i in nombre_batiments:
+			var taille := Vector3(_hasard.randf_range(8, 28), _hasard.randf_range(10, 70), _hasard.randf_range(8, 28))
+			var x: float = cote * (demi_largeur + 8.0 + taille.x * 0.5 + _hasard.randf_range(0, 60))
+			var z := _hasard.randf_range(0.0, -longueur_motif)
+			batiments.append(Transform3D(Basis.from_scale(taille), Vector3(x, taille.y * 0.5, z)))
+			couleurs.append(COULEURS_BATIMENTS[_hasard.randi() % COULEURS_BATIMENTS.size()])
+
+			# Une enseigne lumineuse sur la façade côté piste, une fois sur trois.
+			if _hasard.randf() < 0.35:
+				var h := _hasard.randf_range(4.0, taille.y - 2.0)
+				var facade: float = x - cote * (taille.x * 0.5 + 0.1)
+				enseignes.append(Transform3D(
+					Basis.from_scale(Vector3(0.2, _hasard.randf_range(1.0, 4.0), taille.z * _hasard.randf_range(0.3, 0.8))),
+					Vector3(facade, h, z)))
+				couleurs_enseignes.append(COULEURS_NEONS[_hasard.randi() % COULEURS_NEONS.size()])
+
+		# Tours lointaines : la silhouette de la ville à l'horizon.
+		for i in int(nombre_batiments / 3.0):
+			var taille := Vector3(_hasard.randf_range(20, 60), _hasard.randf_range(80, 260), _hasard.randf_range(20, 60))
+			var x: float = cote * _hasard.randf_range(180, 600)
+			var z := _hasard.randf_range(0.0, -longueur_motif)
+			batiments.append(Transform3D(Basis.from_scale(taille), Vector3(x, taille.y * 0.5, z)))
+			couleurs.append(COULEURS_BATIMENTS[_hasard.randi() % COULEURS_BATIMENTS.size()].darkened(0.3))
+
+	_ajouter_en_masse(BoxMesh.new(), batiments, couleurs, _matiere(Color.WHITE))
+	_ajouter_en_masse(BoxMesh.new(), enseignes, couleurs_enseignes, _matiere(Color.WHITE, 4.0))
+
+
+# --- Outils -----------------------------------------------------------------
+
+func _matiere(couleur: Color, force_emission := 0.0) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = SHADER_TOON
+	m.set_shader_parameter("couleur", couleur)
+	m.set_shader_parameter("force_emission", force_emission)
+	return m
+
+
+func _ajouter_mesh(mesh: Mesh, position_mesh: Vector3) -> void:
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	instance.position = position_mesh
+	add_child(instance)
+
+
+## Affiche le même objet des centaines de fois en une seule fois (MultiMesh),
+## et recopie le motif devant et derrière. Beaucoup plus rapide que de créer
+## un nœud par bâtiment.
+func _ajouter_en_masse(mesh: Mesh, placements: Array[Transform3D], couleurs: Array[Color], matiere: Material) -> void:
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.use_colors = not couleurs.is_empty()
+	multi.mesh = mesh
+	multi.instance_count = placements.size() * COPIES.size()
+
+	var n := 0
+	for copie in COPIES:
+		var decalage := Vector3(0.0, 0.0, -longueur_motif * copie)
+		for i in placements.size():
+			multi.set_instance_transform(n, placements[i].translated(decalage))
+			if multi.use_colors:
+				multi.set_instance_color(n, couleurs[i])
+			n += 1
+
+	var instance := MultiMeshInstance3D.new()
+	instance.multimesh = multi
+	instance.material_override = matiere
+	add_child(instance)
