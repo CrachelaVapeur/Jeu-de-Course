@@ -1,0 +1,158 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/vehicule.tscn" id="1_vehicule"]
+[ext_resource type="Script" path="res://scripts/circuit.gd" id="2_circuit"]
+[ext_resource type="Script" path="res://scripts/camera_poursuite.gd" id="3_camera"]
+[ext_resource type="Script" path="res://scripts/son_moteur.gd" id="4_son"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="5_hud"]
+[ext_resource type="Shader" path="res://shaders/contours.gdshader" id="6_contours"]
+[ext_resource type="Shader" path="res://shaders/lignes_vitesse.gdshader" id="7_lignes"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ciel_matiere"]
+sky_top_color = Color(0.13, 0.06, 0.24, 1)
+sky_horizon_color = Color(0.98, 0.5, 0.3, 1)
+ground_bottom_color = Color(0.12, 0.06, 0.08, 1)
+ground_horizon_color = Color(0.98, 0.5, 0.3, 1)
+sun_angle_max = 20.0
+
+[sub_resource type="Sky" id="ciel"]
+sky_material = SubResource("ciel_matiere")
+
+[sub_resource type="Environment" id="environnement"]
+background_mode = 2
+sky = SubResource("ciel")
+ambient_light_source = 3
+ambient_light_energy = 1.2
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.9
+glow_bloom = 0.05
+fog_enabled = true
+fog_light_color = Color(0.85, 0.45, 0.35, 1)
+fog_density = 0.0022
+fog_sky_affect = 0.4
+adjustment_enabled = true
+adjustment_contrast = 1.1
+adjustment_saturation = 1.25
+
+[sub_resource type="QuadMesh" id="ecran"]
+size = Vector2(2, 2)
+
+[sub_resource type="ShaderMaterial" id="contours_matiere"]
+render_priority = 10
+shader = ExtResource("6_contours")
+
+[sub_resource type="ShaderMaterial" id="lignes_matiere"]
+shader = ExtResource("7_lignes")
+shader_parameter/intensite = 0.0
+
+[sub_resource type="StyleBoxFlat" id="jauge_fond"]
+bg_color = Color(0.05, 0.03, 0.08, 0.7)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.05, 0.02, 0.05, 1)
+skew = Vector2(0.4, 0)
+
+[sub_resource type="StyleBoxFlat" id="jauge_remplissage"]
+bg_color = Color(0.3, 0.95, 1, 1)
+skew = Vector2(0.4, 0)
+
+[node name="Main" type="Node3D"]
+
+[node name="Environnement" type="WorldEnvironment" parent="."]
+environment = SubResource("environnement")
+
+[node name="Soleil" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.9396926, -0.21056868, 0.2695156, 0, 0.7880108, 0.6156615, -0.3420202, 0.5785326, -0.74048793, 0, 50, 0)
+light_color = Color(1, 0.8, 0.6, 1)
+light_energy = 1.3
+shadow_enabled = true
+directional_shadow_max_distance = 250.0
+
+[node name="Circuit" type="Node3D" parent="."]
+script = ExtResource("2_circuit")
+
+[node name="Vehicule" parent="." instance=ExtResource("1_vehicule")]
+
+[node name="Camera" type="Camera3D" parent="." node_paths=PackedStringArray("cible")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 6.5)
+current = true
+fov = 68.0
+far = 1800.0
+script = ExtResource("3_camera")
+cible = NodePath("../Vehicule")
+
+[node name="Contours" type="MeshInstance3D" parent="Camera"]
+mesh = SubResource("ecran")
+material_override = SubResource("contours_matiere")
+cast_shadow = 0
+extra_cull_margin = 16384.0
+
+[node name="SonMoteur" type="AudioStreamPlayer" parent="." node_paths=PackedStringArray("vehicule")]
+volume_db = -6.0
+script = ExtResource("4_son")
+vehicule = NodePath("../Vehicule")
+
+[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("vehicule")]
+script = ExtResource("5_hud")
+vehicule = NodePath("../Vehicule")
+
+[node name="LignesVitesse" type="ColorRect" parent="HUD"]
+material = SubResource("lignes_matiere")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Compteur" type="Label" parent="HUD"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -420.0
+offset_top = -150.0
+offset_right = -50.0
+offset_bottom = -70.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 0.95, 0.85, 1)
+theme_override_colors/font_outline_color = Color(0.05, 0.02, 0.05, 1)
+theme_override_constants/outline_size = 14
+theme_override_font_sizes/font_size = 64
+text = "0 km/h"
+horizontal_alignment = 2
+
+[node name="Jauge" type="ProgressBar" parent="HUD"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -420.0
+offset_top = -65.0
+offset_right = -60.0
+offset_bottom = -40.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_styles/background = SubResource("jauge_fond")
+theme_override_styles/fill = SubResource("jauge_remplissage")
+value = 100.0
+show_percentage = false
+
+[node name="Aide" type="Label" parent="HUD"]
+offset_left = 30.0
+offset_top = 24.0
+offset_right = 700.0
+offset_bottom = 150.0
+theme_override_colors/font_color = Color(1, 0.95, 0.85, 0.85)
+theme_override_colors/font_outline_color = Color(0.05, 0.02, 0.05, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 20
+text = "Z / ↑ : accélérer      S / ↓ : freiner      Q D / ← → : tourner
+Espace : BOOST      R : recommencer
+(manette : gâchettes, stick gauche, A, Start)"
