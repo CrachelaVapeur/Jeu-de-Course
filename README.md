@@ -1,12 +1,12 @@
 # Jeu de Course
 
-Jeu de course SF d'Eric et Willy : un univers original, déjanté, stylisé et un peu grunge, dans l'esprit de *Redline*, du Motorball d'*Alita* et de *Borderlands*. L'ossature s'inspire de *Star Wars Episode I: Racer*.
+Jeu de course SF d'Eric et Willy : un univers original, déjanté, stylisé et un peu grunge, dans l'esprit de *Redline*, du Motorball d'*Alita* et de *Borderlands*. L'ossature s'inspire de *Star Wars: Galactic Racer*.
 
 Le document de conception (GDD) et les comptes rendus de session sont dans le dossier Google Drive « Projet jeu Eric & Willy ».
 
 ## Lancer le prototype
 
-1. Ouvrir **Godot 4.6** et cliquer sur **Importer**.
+1. Ouvrir **Godot 4.7** et cliquer sur **Importer**.
 2. Choisir le fichier `project.godot` de ce dossier.
 3. Appuyer sur **F5** (ou sur le bouton ▶ en haut à droite).
 
