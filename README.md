@@ -6,7 +6,7 @@ Le document de conception (GDD) et les comptes rendus de session sont dans le do
 
 ## Lancer le prototype
 
-1. Ouvrir **Godot 4.6** et cliquer sur **Importer**.
+1. Ouvrir **Godot 4.7** et cliquer sur **Importer**.
 2. Choisir le fichier `project.godot` de ce dossier.
 3. Appuyer sur **F5** (ou sur le bouton ▶ en haut à droite).
 
