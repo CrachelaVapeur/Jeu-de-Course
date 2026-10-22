@@ -10,8 +10,8 @@ extends AudioStreamPlayer
 @export var frequence_max := 210.0
 
 @export_group("Concentration en boost")
-@export var baisse_volume_db := 6.0  ## de combien le volume baisse en plein boost
-@export var clarte_etouffee := 0.05  ## plus c'est petit, plus le son est étouffé
+@export var compensation_volume_db := 6.0  ## remonte le volume pour que l'effet étouffé ne le baisse pas
+@export var clarte_etouffee := 0.03  ## plus c'est petit, plus le son est étouffé
 
 const TAUX := 22050.0
 
@@ -43,9 +43,9 @@ func _process(delta: float) -> void:
 	var souffle := 0.4 if vehicule.en_boost else 0.04 + ratio * 0.06
 	var clarte := 0.15 + vehicule.gaz * 0.25
 
-	# En boost, on devient hyper concentré : le son baisse et s'étouffe.
+	# En boost, on devient hyper concentré : le son s'étouffe, sans baisser de volume.
 	var concentration := vehicule.distorsion
-	volume_db = _volume_normal - baisse_volume_db * concentration
+	volume_db = _volume_normal + compensation_volume_db * concentration
 	clarte = lerpf(clarte, clarte_etouffee, concentration)
 
 	for i in _lecture.get_frames_available():

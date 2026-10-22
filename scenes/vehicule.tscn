@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/vehicule.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/toon.gdshader" id="2_toon"]
+[ext_resource type="Script" path="res://scripts/trainee_lumiere.gd" id="3_trainee"]
 
 [sub_resource type="ShaderMaterial" id="peinture"]
 shader = ExtResource("2_toon")
@@ -127,3 +128,11 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 mesh = SubResource("cone_flamme")
 cast_shadow = 0
+
+[node name="Trainee" type="MeshInstance3D" parent="Carrosserie/ReacteurG/Flamme" node_paths=PackedStringArray("vehicule")]
+script = ExtResource("3_trainee")
+vehicule = NodePath("../../../..")
+
+[node name="Trainee" type="MeshInstance3D" parent="Carrosserie/ReacteurD/Flamme" node_paths=PackedStringArray("vehicule")]
+script = ExtResource("3_trainee")
+vehicule = NodePath("../../../..")
