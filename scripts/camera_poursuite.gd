@@ -22,6 +22,7 @@ var _secousse := 0.0
 func _ready() -> void:
 	cible.teleporte.connect(func(decalage: Vector3) -> void: global_position += decalage)
 	cible.mur_touche.connect(_sur_choc)
+	cible.atterrissage.connect(func(force: float) -> void: _sur_choc(force * 0.6))
 	_cap_camera = cible.rotation.y
 
 

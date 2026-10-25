@@ -65,6 +65,10 @@ top_radius = 0.38
 bottom_radius = 0.42
 height = 2.0
 
+[sub_resource type="CapsuleShape3D" id="forme_collision"]
+radius = 0.55
+height = 4.2
+
 [sub_resource type="CylinderMesh" id="cone_flamme"]
 material = SubResource("flamme")
 top_radius = 0.0
@@ -73,8 +77,14 @@ height = 1.0
 radial_segments = 12
 rings = 1
 
-[node name="Vehicule" type="Node3D"]
+[node name="Vehicule" type="CharacterBody3D"]
+floor_max_angle = 0.87266463
+floor_snap_length = 0.6
 script = ExtResource("1_script")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.55, 0)
+shape = SubResource("forme_collision")
 
 [node name="Carrosserie" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)

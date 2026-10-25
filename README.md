@@ -38,24 +38,38 @@ Les effets qui donnent la vitesse :
 - **Son de moteur** qui monte dans les aigus, et souffle du boost.
 - **Rendu cartoon** : éclairage en aplats et contours noirs façon BD.
 
+## Circuits avec relief
+
+![Le circuit d'essai, en plein saut au-dessus d'un trou](docs/capture_circuit_essai.png)
+
+La scène `scenes/circuit_essai.tscn` (à ouvrir puis lancer avec **F6**, « lancer la scène actuelle ») est un vrai circuit en boucle : montées, descentes, virages relevés, blocs à éviter, tremplin au-dessus d'un trou et passage sans muret. Si on tombe, on réapparaît un peu plus tôt sur la route. Un chrono compte les tours et garde le meilleur.
+
+Tout le circuit est construit par le code à partir d'un petit fichier de données, `circuits/circuit_essai.gd` : une liste de points de passage vus de dessus (avec leur hauteur et leur dévers) et une liste d'obstacles placés par leur distance depuis le départ. Le mode d'emploi est en tête du fichier. Pour créer un nouveau circuit, on copie ce fichier, on change les points et les obstacles, et on indique le nouveau fichier dans le réglage `fichier_circuit` du nœud **Circuit**.
+
 ## Organisation des fichiers
 
 ```
 project.godot           Réglages du projet (scène de départ, fenêtre…)
+circuits/
+  circuit_essai.gd      Le tracé et les obstacles du circuit d'essai
 scenes/
   main.tscn             La scène principale : décor, caméra, son, affichage
+  circuit_essai.tscn    Un vrai circuit avec relief et obstacles
   vehicule.tscn         Le bolide (formes simples, à remplacer par un vrai modèle)
 scripts/
   commandes.gd          Les touches clavier et manette
   vehicule.gd           Conduite, boost, animations du bolide
   camera_poursuite.gd   Caméra et effets de vitesse
-  circuit.gd            Construction du décor par le code
+  decor_base.gd         Ce que partagent tous les décors (effets du boost)
+  circuit.gd            Construction de la ligne droite par le code
+  circuit_trace.gd      Construction d'un circuit à partir d'un fichier de données
   son_moteur.gd         Son de moteur généré en direct
   hud.gd                Compteur, jauge de boost, lignes de vitesse
 shaders/
   toon.gdshader         Matière cartoon des objets
   contours.gdshader     Contours noirs sur toute l'image
   route.gdshader        Marquages de la piste
+  route_circuit.gdshader  Marquages qui suivent les virages des circuits
   lignes_vitesse.gdshader  Lignes de vitesse à l'écran
 ```
 
