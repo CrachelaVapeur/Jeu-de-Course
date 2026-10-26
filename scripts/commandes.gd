@@ -11,6 +11,7 @@ const COMMANDES := {
 	"gauche": {"touches": [KEY_A, KEY_LEFT], "axe": [JOY_AXIS_LEFT_X, -1.0]},
 	"droite": {"touches": [KEY_D, KEY_RIGHT], "axe": [JOY_AXIS_LEFT_X, 1.0]},
 	"boost": {"touches": [KEY_SPACE, KEY_SHIFT], "bouton": JOY_BUTTON_A},
+	"deraper": {"touches": [KEY_X, KEY_CTRL], "bouton": JOY_BUTTON_RIGHT_SHOULDER},
 	"recommencer": {"touches": [KEY_R], "bouton": JOY_BUTTON_START},
 }
 
