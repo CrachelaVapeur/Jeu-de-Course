@@ -4,6 +4,7 @@
 // (UV.x = mètres depuis le centre, UV.y = mètres depuis le début de la route)
 // et dans UV2.x la demi-largeur de la route à cet endroit (elle peut varier).
 // UV2.y = 1 : c'est le sol du cratère (roche noire fendue de lave).
+// UV2.y = 2 : les pointillés sont lumineux, et des vagues de lumière y courent.
 shader_type spatial;
 render_mode diffuse_toon, specular_disabled, cull_disabled;
 
@@ -16,6 +17,8 @@ uniform float demi_largeur = 12.0; // utilisée seulement si UV2.x est vide
 uniform float ligne_depart = 0.0; // distance de la ligne de départ
 uniform float ligne_arrivee = -100.0; // distance de la ligne d'arrivée (négatif = pas d'arrivée à part)
 uniform float longueur_damier = 4.0; // longueur du damier des lignes de départ et d'arrivée
+uniform vec4 couleur_lignes : source_color = vec4(0.3, 0.95, 1.0, 1.0);
+uniform float vitesse_vagues = 140.0; // vitesse des vagues de lumière, en m/s
 uniform vec4 roche : source_color = vec4(0.12, 0.07, 0.07, 1.0);
 uniform vec4 lave : source_color = vec4(1.0, 0.25, 0.05, 1.0);
 
@@ -49,7 +52,7 @@ void sol_cratere(vec2 uv, out vec3 albedo, out vec3 emission) {
 	emission = lave.rgb * fente * (0.6 + 2.5 * plaques);
 }
 
-void route(vec2 uv, float demi, out vec3 albedo, out vec3 emission) {
+void route(vec2 uv, float demi, bool lumineuse, float temps, out vec3 albedo, out vec3 emission) {
 	float x = uv.x;
 	float d = uv.y;
 	float ax = abs(x);
@@ -78,16 +81,22 @@ void route(vec2 uv, float demi, out vec3 albedo, out vec3 emission) {
 
 	albedo = mix(c, neon.rgb, trait_neon);
 	emission = neon.rgb * trait_neon * 4.0;
+	if (lumineuse) {
+		// Les pointillés brillent, et une vague plus forte court vers l'avant.
+		float vague = pow(0.5 + 0.5 * sin((d - temps * vitesse_vagues) * 0.035), 8.0);
+		albedo = mix(albedo, couleur_lignes.rgb, pointille);
+		emission += couleur_lignes.rgb * pointille * (1.2 + 5.0 * vague);
+	}
 }
 
 void fragment() {
 	vec3 albedo;
 	vec3 emission;
-	if (UV2.y > 0.5) {
+	if (UV2.y > 0.5 && UV2.y < 1.5) {
 		sol_cratere(UV, albedo, emission);
 		ROUGHNESS = 0.9;
 	} else {
-		route(UV, UV2.x > 0.0 ? UV2.x : demi_largeur, albedo, emission);
+		route(UV, UV2.x > 0.0 ? UV2.x : demi_largeur, UV2.y > 1.5, TIME, albedo, emission);
 		ROUGHNESS = 0.8;
 	}
 	ALBEDO = albedo;

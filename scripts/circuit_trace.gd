@@ -84,6 +84,7 @@ func _ready() -> void:
 		Cratere.new(self, graine).construire(_donnees.OBSTACLES)
 	else:
 		_construire_sol()
+	Reperes.new(self, graine).construire(_donnees.OBSTACLES)
 	_construire_batiments()
 	_placer_vehicule()
 	_creer_affichage()
@@ -250,9 +251,11 @@ func _construire_route() -> void:
 		if _obstacle_a("cratere", milieu):
 			_construire_sol_cratere(dessus, a, b, milieu)
 		else:
+			# UV2.y = 2 : le shader allume les pointillés (lignes lumineuses).
+			var mode := 2.0 if _obstacle_a("lignes_lumineuses", milieu) else 0.0
 			_quad(dessus, [al, ar, br, bl], a.haut,
 				[Vector2(-uv_a, a.d), Vector2(uv_a, a.d), Vector2(uv_b, b.d), Vector2(-uv_b, b.d)],
-				[Vector2(uv_a, 0.0), Vector2(uv_a, 0.0), Vector2(uv_b, 0.0), Vector2(uv_b, 0.0)])
+				[Vector2(uv_a, mode), Vector2(uv_a, mode), Vector2(uv_b, mode), Vector2(uv_b, mode)])
 
 		# L'épaisseur de la route : visible au bord des trous et des ravins.
 		var ea: Vector3 = a.haut * epaisseur_route
@@ -465,6 +468,20 @@ func _construire_tunnel(o: Dictionary) -> void:
 		lampes.append(Transform3D(base.scaled_local(Vector3(0.6, 0.25, 7.0)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.2)))
 		d += 16.0
 	_ajouter_en_masse(BoxMesh.new(), lampes, [], _matiere(Color(1.0, 0.62, 0.25), 5.0))
+
+	# Des traits lumineux sur les murs : ils défilent et donnent la vitesse.
+	var traits: Array[Transform3D] = []
+	d = o.a + 4.0
+	while d < o.a + o.longueur - 8.0:
+		var a := _cadre(d)
+		var b := _cadre(d + 5.0)
+		for cote in [-1.0, 1.0]:
+			var decalage: float = 0.55 * cote
+			var pa: Vector3 = _bord(a, cote) + a.droite * decalage + Vector3.UP * 2.2
+			var pb: Vector3 = _bord(b, cote) + b.droite * decalage + Vector3.UP * 2.2
+			traits.append(_poutre(pa, pb, 0.25))
+		d += 11.0
+	_ajouter_en_masse(BoxMesh.new(), traits, [], _matiere(Color(0.2, 0.9, 1.0), 4.0))
 
 	_construire_facade(_cadre(o.a))
 	_construire_facade(_cadre(o.a + o.longueur))

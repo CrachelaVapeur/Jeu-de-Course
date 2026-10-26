@@ -403,4 +403,20 @@ const OBSTACLES := [
 	{"type": "puits", "a": 10484, "decalage": 18, "rayon": 24},
 	{"type": "rochers", "a": 9560, "longueur": 1100, "nombre": 40},
 	{"type": "monstre", "a": 9650, "longueur": 950},
+
+	# Repères de vitesse et éclairage : chaque section a le sien, et certaines
+	# restent sombres exprès, pour les contrastes.
+	{"type": "balises", "a": 40, "longueur": 1000},  # canyon du départ
+	{"type": "balises", "a": 2430, "longueur": 500},
+	{"type": "panneau", "a": 2850, "texte": "CYBER CITY 1"},
+	{"type": "lampadaires", "a": 2900, "longueur": 1450, "ecart": 50},
+	{"type": "lignes_lumineuses", "a": 3000, "longueur": 1200},
+	{"type": "lampadaires", "a": 4450, "longueur": 960, "ecart": 36},  # le pont
+	{"type": "balises", "a": 5400, "longueur": 2600},  # la montée, dans le noir
+	{"type": "portiques", "a": 6200, "longueur": 1200, "ecart": 300},
+	{"type": "panneau", "a": 9380, "texte": "DANGER  CRATÈRE"},
+	{"type": "panneau", "a": 10780, "texte": "CYBER CITY 2"},
+	{"type": "lampadaires", "a": 10800, "longueur": 2000, "ecart": 50},
+	{"type": "lignes_lumineuses", "a": 12870, "longueur": 1960},  # la ligne droite finale
+	{"type": "portiques", "a": 13000, "longueur": 1700, "ecart": 420},
 ]
