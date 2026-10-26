@@ -5,7 +5,6 @@
 [ext_resource type="Script" uid="uid://42tdkgdsqm81" path="res://scripts/camera_poursuite.gd" id="3_camera"]
 [ext_resource type="Script" uid="uid://cm7yk562hfm0b" path="res://scripts/son_moteur.gd" id="4_son"]
 [ext_resource type="Script" uid="uid://b6icoepq7vnxm" path="res://scripts/hud.gd" id="5_hud"]
-[ext_resource type="Shader" uid="uid://bwy5xhxj5gn14" path="res://shaders/contours.gdshader" id="6_contours"]
 [ext_resource type="Shader" uid="uid://1f812xse2hra" path="res://shaders/lignes_vitesse.gdshader" id="7_lignes"]
 [ext_resource type="Shader" uid="uid://b5rev2jrvv3cb" path="res://shaders/tunnel.gdshader" id="8_tunnel"]
 
@@ -29,24 +28,24 @@ ambient_light_sky_contribution = 0.5
 ambient_light_energy = 0.55
 tonemap_mode = 2
 glow_enabled = true
-glow_intensity = 1.0
-glow_bloom = 0.05
+glow_levels/1 = 0.0
+glow_levels/2 = 0.6
+glow_levels/3 = 1.0
+glow_levels/4 = 0.7
+glow_levels/5 = 0.35
+glow_intensity = 0.55
+glow_strength = 1.0
+glow_bloom = 0.01
+glow_blend_mode = 1
+glow_hdr_threshold = 1.2
 fog_enabled = true
-fog_light_color = Color(0.07, 0.07, 0.16, 1)
-fog_density = 0.0009
-fog_sky_affect = 0.4
+fog_light_color = Color(0.1, 0.11, 0.22, 1)
+fog_density = 0.0015
+fog_aerial_perspective = 0.5
+fog_sky_affect = 0.5
 adjustment_enabled = true
-adjustment_contrast = 1.1
-adjustment_saturation = 1.25
-
-[sub_resource type="ShaderMaterial" id="contours_matiere"]
-render_priority = 10
-shader = ExtResource("6_contours")
-shader_parameter/couleur = Color(0.04, 0.02, 0.05, 1)
-shader_parameter/epaisseur = 1.5
-shader_parameter/seuil_profondeur = 0.12
-shader_parameter/seuil_normales = 0.6
-shader_parameter/distance_fondu = 400.0
+adjustment_contrast = 1.05
+adjustment_saturation = 1.0
 
 [sub_resource type="QuadMesh" id="ecran"]
 size = Vector2(2, 2)
@@ -54,18 +53,18 @@ size = Vector2(2, 2)
 [sub_resource type="ShaderMaterial" id="tunnel_matiere"]
 shader = ExtResource("8_tunnel")
 shader_parameter/intensite = 0.0
-shader_parameter/rayon_net = 0.35
+shader_parameter/rayon_net = 0.7
 shader_parameter/douceur = 1.2
-shader_parameter/flou_radial = 0.12
-shader_parameter/aberration = 0.015
-shader_parameter/assombrissement = 0.8
+shader_parameter/flou_radial = 0.05
+shader_parameter/aberration = 0.006
+shader_parameter/assombrissement = 0.35
 shader_parameter/couleur_bord = Vector3(0.03, 0.01, 0.05)
 
 [sub_resource type="ShaderMaterial" id="lignes_matiere"]
 shader = ExtResource("7_lignes")
 shader_parameter/intensite = 0.0
-shader_parameter/nombre_lignes = 140.0
-shader_parameter/couleur = Color(1, 0.97, 0.9, 0.85)
+shader_parameter/nombre_lignes = 90.0
+shader_parameter/couleur = Color(1, 0.97, 0.9, 0.2)
 
 [sub_resource type="StyleBoxFlat" id="jauge_fond"]
 bg_color = Color(0.05, 0.03, 0.08, 0.7)
@@ -97,6 +96,10 @@ script = ExtResource("2_circuit")
 vehicule = NodePath("../Vehicule")
 environnement = NodePath("../Environnement")
 fichier_circuit = "res://circuits/circuit_01.gd"
+contraste_boost = 1.15
+glow_boost = 0.9
+bloom_boost = 0.04
+saturation_boost = 1.3
 
 [node name="Vehicule" parent="." instance=ExtResource("1_vehicule")]
 
@@ -115,12 +118,8 @@ fov = 68.0
 far = 4000.0
 script = ExtResource("3_camera")
 cible = NodePath("../Vehicule")
-
-[node name="Contours" type="MeshInstance3D" parent="Camera"]
-material_override = SubResource("contours_matiere")
-cast_shadow = 0
-extra_cull_margin = 16384.0
-mesh = SubResource("ecran")
+fov_distorsion = 112.0
+recul_max = 1.5
 
 [node name="SonMoteur" type="AudioStreamPlayer" parent="." node_paths=PackedStringArray("vehicule")]
 volume_db = -6.0

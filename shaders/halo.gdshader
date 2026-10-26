@@ -6,6 +6,9 @@ render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabl
 uniform vec4 couleur : source_color = vec4(1.0, 0.6, 0.3, 1.0);
 uniform float force = 0.6;
 uniform float noir_et_blanc : hint_range(0.0, 1.0) = 0.0;
+// Le brouillard normal dessine des rectangles sur ces objets transparents :
+// on l'imite ici, en effaçant la lumière avec la distance.
+uniform float brume = 0.0012;
 
 void vertex() {
 	// Le carré tourne pour faire face à la caméra.
@@ -18,5 +21,5 @@ void fragment() {
 	float lueur = pow(clamp(1.0 - r, 0.0, 1.0), 2.5);
 	vec3 c = couleur.rgb;
 	c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))), noir_et_blanc);
-	ALBEDO = c * force * lueur;
+	ALBEDO = c * force * lueur * exp(-length(VERTEX) * brume);
 }

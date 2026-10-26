@@ -26,7 +26,7 @@ En QWERTY, ce sont les touches W A S D, à la même place.
 
 ![Le prototype en plein boost](docs/capture_boost.png)
 
-Ce premier prototype sert à régler la **sensation de vitesse**. Il propose une ligne droite sans fin dans une ville industrielle au coucher du soleil, avec un bolide qui va de 270 km/h en vitesse normale à environ 610 km/h en boost.
+Ce premier prototype sert à régler la **sensation de vitesse**. Il propose une ligne droite sans fin dans une ville industrielle au coucher du soleil, avec un bolide qui va de 270 km/h en vitesse normale à 500 km/h en boost. Le boost démarre doucement puis pousse de plus en plus fort.
 
 Les effets qui donnent la vitesse :
 
@@ -36,13 +36,19 @@ Les effets qui donnent la vitesse :
 - **Lignes de vitesse façon anime** sur les bords de l'écran.
 - **Marquages au sol, murets et portiques** qui défilent, comme repères visuels.
 - **Son de moteur** qui monte dans les aigus, et souffle du boost.
-- **Rendu cartoon** : éclairage en aplats et contours noirs façon BD.
+- **Rendu cartoon** : éclairage en aplats (et contours noirs façon BD sur la ligne droite d'essai ; les circuits n'en ont plus pour l'instant).
 
 ## Circuit 1 (en construction)
 
-![Le pont au-dessus de l'embouchure, de nuit](docs/circuit_01/capture_pont.png)
+![Le cratère en terre, avec Cyber City 2 et le phare au loin](docs/circuit_01/capture_cratere.png)
 
-C'est la scène lancée par **F5** : `scenes/circuit_01.tscn`. Une course de nuit d'environ 15 km, d'un point à un autre, d'après la carte annotée d'Eric (`docs/circuit_01/`) : départ dans un canyon, long tunnel, Cyber City 1, pont à haubans au-dessus de l'embouchure, montée dans la montagne, saut au-dessus d'une crevasse, zone cratère, Cyber City 2 et longue ligne droite finale. Les deux villes sont là : immeubles aux fenêtres éclairées par endroits, enseignes, pyramide lumineuse avec ses projecteurs, cheminées d'usine, et un phare géant au faisceau tournant. Le cratère est un grand espace libre au sol de roche fendue de lave, avec des puits de lave où l'on tombe, des rochers à contourner, et un monstre géant (une silhouette provisoire en blocs) qui s'y promène au hasard : il est solide, et ses pas font trembler la caméra. Pour la sensation de vitesse, chaque section a ses propres repères : bandes lumineuses dans le tunnel, lampadaires dans les villes et sur le pont, balises sur les murets dans la montagne, portiques colorés dans la montée, chevrons à l'extérieur des virages serrés, et sur la ligne droite finale des pointillés lumineux où courent des vagues de lumière. Des panneaux annoncent les villes, le cratère et l'arrivée (1000, 500 et 250 m).
+C'est la scène lancée par **F5** : `scenes/circuit_01.tscn`. Une course de nuit d'environ 14,5 km, d'un point à un autre, d'après la carte annotée d'Eric (`docs/circuit_01/`) : départ dans un canyon, long tunnel, Cyber City 1, pont à haubans au-dessus de l'embouchure, montée dans la montagne, saut au-dessus d'une crevasse, zone cratère, Cyber City 2 et longue ligne droite finale. La route est large (36 m au plus étroit), ses virages sont amples, et rien de solide ne se trouve sur la trajectoire.
+
+Les deux villes se tiennent à distance de la route : de près, des immeubles bas ; au loin, des silhouettes dont les étages s'allument en lignes, noyées dans la brume. Il y a aussi la pyramide lumineuse avec ses projecteurs, des cheminées d'usine, et un phare géant au faisceau tournant. Le cratère est un grand champ libre en terre où un monstre géant (une silhouette provisoire en blocs) se promène au hasard : il est solide, et ses pas font trembler la caméra.
+
+Chaque zone a une seule teinte de lumière (`COULEURS_ZONES` dans `circuits/circuit_01.gd`) : blanc froid dans le canyon et sur le pont, cyan dans le tunnel, ambre dans Cyber City 1, violet dans la montagne, cyan dans Cyber City 2 et sur la ligne finale. Pour la sensation de vitesse, chaque section a ses repères dans cette teinte : bandes dans le tunnel, lampadaires dans les villes et sur le pont, balises sur les murets, portiques dans la montée, chevrons dans les virages, et sur la ligne droite finale des pointillés lumineux où courent des vagues de lumière.
+
+Si le bolide passe sous la route après un choc, ou reste coincé, il est remis sur la route.
 
 ![La ligne droite finale et ses lignes lumineuses](docs/circuit_01/capture_ligne_droite.png)
 
@@ -82,9 +88,9 @@ scripts/
   terrain_carte.gd      Le sol : mer, terre et montagnes, d'après la carte du relief
   villes.gd             Les villes et les monuments (pyramide, cheminées, phare)
   tourner.gd            Fait tourner un objet (faisceau du phare)
-  cratere.gd            La zone cratère : puits de lave, rochers, monstre
+  cratere.gd            La zone cratère et son monstre
   monstre.gd            Le monstre qui erre dans le cratère
-  reperes.gd            Les repères de vitesse : lampadaires, balises, portiques, panneaux, chevrons
+  reperes.gd            Les repères de vitesse : lampadaires, balises, portiques, chevrons
   son_moteur.gd         Son de moteur généré en direct
   hud.gd                Compteur, jauge de boost, lignes de vitesse
 shaders/

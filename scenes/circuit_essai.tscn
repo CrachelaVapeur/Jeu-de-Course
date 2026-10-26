@@ -5,7 +5,6 @@
 [ext_resource type="Script" uid="uid://42tdkgdsqm81" path="res://scripts/camera_poursuite.gd" id="3_camera"]
 [ext_resource type="Script" uid="uid://cm7yk562hfm0b" path="res://scripts/son_moteur.gd" id="4_son"]
 [ext_resource type="Script" uid="uid://b6icoepq7vnxm" path="res://scripts/hud.gd" id="5_hud"]
-[ext_resource type="Shader" uid="uid://bwy5xhxj5gn14" path="res://shaders/contours.gdshader" id="6_contours"]
 [ext_resource type="Shader" uid="uid://1f812xse2hra" path="res://shaders/lignes_vitesse.gdshader" id="7_lignes"]
 [ext_resource type="Shader" uid="uid://b5rev2jrvv3cb" path="res://shaders/tunnel.gdshader" id="8_tunnel"]
 
@@ -35,15 +34,6 @@ fog_sky_affect = 0.4
 adjustment_enabled = true
 adjustment_contrast = 1.1
 adjustment_saturation = 1.25
-
-[sub_resource type="ShaderMaterial" id="contours_matiere"]
-render_priority = 10
-shader = ExtResource("6_contours")
-shader_parameter/couleur = Color(0.04, 0.02, 0.05, 1)
-shader_parameter/epaisseur = 1.5
-shader_parameter/seuil_profondeur = 0.12
-shader_parameter/seuil_normales = 0.6
-shader_parameter/distance_fondu = 400.0
 
 [sub_resource type="QuadMesh" id="ecran"]
 size = Vector2(2, 2)
@@ -104,12 +94,6 @@ fov = 68.0
 far = 1800.0
 script = ExtResource("3_camera")
 cible = NodePath("../Vehicule")
-
-[node name="Contours" type="MeshInstance3D" parent="Camera" unique_id=1938512424]
-material_override = SubResource("contours_matiere")
-cast_shadow = 0
-extra_cull_margin = 16384.0
-mesh = SubResource("ecran")
 
 [node name="SonMoteur" type="AudioStreamPlayer" parent="." unique_id=1315242076 node_paths=PackedStringArray("vehicule")]
 volume_db = -6.0
