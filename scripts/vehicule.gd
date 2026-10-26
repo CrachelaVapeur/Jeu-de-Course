@@ -45,6 +45,10 @@ signal atterrissage(force: float)
 ## puis pousse de plus en plus fort (une courbe qui se creuse, pas un coup sec).
 @export var duree_montee_boost := 2.5
 
+@export_group("Apparence")
+## Matière (toon) appliquée au modèle 3D. Les couleurs viennent des couleurs de sommets du modèle.
+@export var matiere_modele: Material
+
 @export_group("Circuit")
 ## Coché : ancienne ligne droite d'essai. Décoché : vrai circuit avec relief.
 @export var piste_droite := true
@@ -70,6 +74,13 @@ var distorsion := 0.0
 ## 0 au début du boost, 1 quand il pousse à fond (voir duree_montee_boost).
 var montee_boost := 0.0
 
+## Rayon des roues (en mètres) : sert à faire tourner les roues à la bonne vitesse.
+const RAYON_AVANT := 0.34
+const RAYON_ARRIERE := 0.42
+## Au-delà, les roues tourneraient trop vite pour l'écran (effet « roue de chariot »).
+const ROTATION_VISUELLE_MAX := 28.0  # radians par seconde
+const BRAQUAGE_MAX := 0.45  # radians, roues avant
+
 var _cap := 0.0  # angle du bolide autour de l'axe vertical
 var _temps := 0.0
 var _contact_mur := false
@@ -85,6 +96,18 @@ var _bloque_depuis := 0.0  # secondes passées à accélérer sans avancer
 	$Carrosserie/ReacteurG/Flamme,
 	$Carrosserie/ReacteurD/Flamme,
 ]
+var _pivots_avant: Array[Node3D] = []  # tournent à gauche/droite (braquage)
+var _roues_avant: Array[Node3D] = []  # tournent sur elles-mêmes
+var _roues_arriere: Array[Node3D] = []
+var _longueur_laterale := 0.0  # longueur lissée des flammes d'échappement latérales
+var _largeur_laterale := 1.0
+var _angle_roue_avant := 0.0
+var _angle_roue_arriere := 0.0
+
+@onready var _flammes_laterales: Array[Node3D] = [
+	$Carrosserie/SortieG/Flamme,
+	$Carrosserie/SortieD/Flamme,
+]
 @onready var _matiere_flamme: StandardMaterial3D = (
 	$Carrosserie/ReacteurG/Flamme/Mesh as MeshInstance3D
 ).get_active_material(0)
@@ -94,6 +117,18 @@ func _ready() -> void:
 	jauge_boost = jauge_max
 	_depart = global_transform
 	_cap = rotation.y
+	# Le modèle importé arrive avec une matière standard : on la remplace par la matière cartoon.
+	for noeud in $Carrosserie/Modele.find_children("*", "MeshInstance3D", true, false):
+		(noeud as MeshInstance3D).material_override = matiere_modele
+	# Chaque roue du modèle est un nœud « RoueXxx » (qu'on oriente) qui contient
+	# un maillage (qu'on fait tourner).
+	for nom in ["RoueAvG", "RoueAvD"]:
+		var pivot := $Carrosserie/Modele.find_child(nom, true, false) as Node3D
+		_pivots_avant.append(pivot)
+		_roues_avant.append(pivot.get_child(0) as Node3D)
+	for nom in ["RoueArG", "RoueArD"]:
+		var pivot := $Carrosserie/Modele.find_child(nom, true, false) as Node3D
+		_roues_arriere.append(pivot.get_child(0) as Node3D)
 
 
 func _physics_process(delta: float) -> void:
@@ -308,18 +343,49 @@ func _animer(delta: float) -> void:
 		var horizontale := Vector2(velocity.x, velocity.z).length()
 		tangage_sol = clampf(atan2(velocity.y, maxf(horizontale, 1.0)) * 0.6, -0.5, 0.5)
 
-	# Le bolide flotte, penche dans les virages et lève le nez en boost.
-	_carrosserie.position.y = 0.7 + sin(_temps * 3.0) * 0.06
-	_carrosserie.rotation.z = lerpf(_carrosserie.rotation.z, roulis_sol + virage * 0.35, lissage)
-	_carrosserie.rotation.x = lerpf(_carrosserie.rotation.x, tangage_sol + (0.05 if en_boost else 0.0), lissage)
+	# La voiture roule sur ses roues : petites vibrations de suspension (plus fortes
+	# à grande vitesse), léger roulis dans les virages, nez qui se lève en boost.
+	var allure := clampf(ratio_vitesse(), 0.0, 1.0)
+	_carrosserie.position.y = 0.7 + (sin(_temps * 37.0) * 0.004 + sin(_temps * 13.0) * 0.003) * allure
+	_carrosserie.rotation.z = lerpf(_carrosserie.rotation.z, roulis_sol + virage * 0.07 * allure, lissage)
+	_carrosserie.rotation.x = lerpf(_carrosserie.rotation.x, tangage_sol + (0.04 if en_boost else 0.0), lissage)
+
+	_animer_roues(delta, virage, lissage)
 
 	var longueur_flamme := 0.3 + gaz * 0.8 + (1.6 if en_boost else 0.0)
 	var vibration := 1.0 + sin(_temps * 60.0) * 0.08
 	for flamme in _flammes:
 		flamme.scale.y = lerpf(flamme.scale.y, longueur_flamme, lissage) * vibration
 
+	# Flammes latérales : de plus en plus longues avec la vitesse, énormes en boost.
+	var allure_flamme := clampf(ratio_vitesse(), 0.0, 1.0)
+	var longueur_laterale := pow(allure_flamme, 2.0) * 1.6 + (6.0 if en_boost else 0.0)
+	var largeur_laterale := 1.6 + (2.4 if en_boost else 0.0)
+	_longueur_laterale = lerpf(_longueur_laterale, longueur_laterale, lissage)
+	_largeur_laterale = lerpf(_largeur_laterale, largeur_laterale, lissage)
+	for flamme in _flammes_laterales:
+		flamme.visible = _longueur_laterale > 0.08
+		flamme.scale = Vector3(_largeur_laterale, maxf(_longueur_laterale, 0.01) * vibration, _largeur_laterale)
+
 	var couleur := Color(1.0, 0.2, 0.6) if en_boost else Color(0.3, 0.9, 1.0)
 	_matiere_flamme.emission = _matiere_flamme.emission.lerp(couleur, lissage)
+
+
+func _animer_roues(delta: float, virage: float, lissage: float) -> void:
+	# Les roues avant tournent vers le virage (moins quand on va vite).
+	var braquage := virage * BRAQUAGE_MAX / (1.0 + ratio_vitesse())
+	for pivot in _pivots_avant:
+		pivot.rotation.y = lerpf(pivot.rotation.y, braquage, lissage)
+
+	# Rotation des roues : vitesse / rayon = radians par seconde (le haut de la roue va vers l'avant).
+	var rot_avant := minf(vitesse / RAYON_AVANT, ROTATION_VISUELLE_MAX)
+	var rot_arriere := minf(vitesse / RAYON_ARRIERE, ROTATION_VISUELLE_MAX)
+	_angle_roue_avant = fmod(_angle_roue_avant - rot_avant * delta, TAU)
+	_angle_roue_arriere = fmod(_angle_roue_arriere - rot_arriere * delta, TAU)
+	for roue in _roues_avant:
+		roue.rotation.x = _angle_roue_avant
+	for roue in _roues_arriere:
+		roue.rotation.x = _angle_roue_arriere
 
 
 func _recommencer() -> void:
