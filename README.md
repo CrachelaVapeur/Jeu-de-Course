@@ -38,6 +38,14 @@ Les effets qui donnent la vitesse :
 - **Son de moteur** qui monte dans les aigus, et souffle du boost.
 - **Rendu cartoon** : éclairage en aplats et contours noirs façon BD.
 
+## Circuit 1 (en construction)
+
+![Le pont au-dessus de l'embouchure, de nuit](docs/circuit_01/capture_pont.png)
+
+C'est la scène lancée par **F5** : `scenes/circuit_01.tscn`. Une course de nuit d'environ 15 km, d'un point à un autre, d'après la carte annotée d'Eric (`docs/circuit_01/`) : départ dans un canyon, long tunnel, Cyber City 1, pont à haubans au-dessus de l'embouchure, montée dans la montagne, saut au-dessus d'une crevasse, zone cratère, Cyber City 2 et longue ligne droite finale. Les villes, le cratère et son monstre, et les repères lumineux arrivent dans les prochaines étapes.
+
+Le sol (mer, terre ferme, montagnes en falaises) est construit à partir d'une petite image, `circuits/circuit_01_relief.png` : rouge = montagnes, vert = terre, noir = mer. On peut la repeindre dans n'importe quel logiciel de dessin.
+
 ## Circuits avec relief
 
 ![Le circuit d'essai, en plein saut au-dessus d'un trou](docs/capture_circuit_essai.png)
@@ -52,9 +60,13 @@ Tout le circuit est construit par le code à partir d'un petit fichier de donné
 project.godot           Réglages du projet (scène de départ, fenêtre…)
 circuits/
   circuit_essai.gd      Le tracé et les obstacles du circuit d'essai
+  circuit_01.gd         Le tracé du circuit 1 (points relevés sur la carte)
+  circuit_01_relief.png La carte du relief du circuit 1
+outils/                 Petits scripts Python qui ont relevé le circuit 1 sur la carte
 scenes/
   main.tscn             La scène principale : décor, caméra, son, affichage
-  circuit_essai.tscn    Un vrai circuit avec relief et obstacles
+  circuit_essai.tscn    Un petit circuit d'essai avec relief et obstacles
+  circuit_01.tscn       Le circuit 1, de nuit
   vehicule.tscn         Le bolide (formes simples, à remplacer par un vrai modèle)
 scripts/
   commandes.gd          Les touches clavier et manette
@@ -63,6 +75,7 @@ scripts/
   decor_base.gd         Ce que partagent tous les décors (effets du boost)
   circuit.gd            Construction de la ligne droite par le code
   circuit_trace.gd      Construction d'un circuit à partir d'un fichier de données
+  terrain_carte.gd      Le sol : mer, terre et montagnes, d'après la carte du relief
   son_moteur.gd         Son de moteur généré en direct
   hud.gd                Compteur, jauge de boost, lignes de vitesse
 shaders/
@@ -70,6 +83,7 @@ shaders/
   contours.gdshader     Contours noirs sur toute l'image
   route.gdshader        Marquages de la piste
   route_circuit.gdshader  Marquages qui suivent les virages des circuits
+  eau.gdshader          La mer de nuit
   lignes_vitesse.gdshader  Lignes de vitesse à l'écran
 ```
 

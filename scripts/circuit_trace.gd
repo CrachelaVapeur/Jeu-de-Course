@@ -1,8 +1,10 @@
 extends DecorBase
 ## Construit un vrai circuit à partir d'un fichier de données rangé dans
 ## circuits/ : la route (avec ses pentes et ses virages relevés), les murets,
-## les obstacles (blocs, tremplins, trous), la ligne de départ, les piliers
-## sous la route et un décor de bâtiments. Gère aussi le chrono et les tours.
+## les obstacles (blocs, tremplins, trous, tunnels, ponts), les lignes de
+## départ et d'arrivée, les piliers sous la route, le sol (mer, terre et
+## montagnes, si le circuit a une carte du relief) et un décor de bâtiments.
+## Gère aussi le chrono, les tours, et la réapparition quand on tombe.
 ##
 ## Pour créer un nouveau circuit : copier circuits/circuit_essai.gd, changer
 ## les points et les obstacles, puis choisir ce fichier dans « fichier_circuit »
@@ -16,6 +18,8 @@ extends DecorBase
 @export var hauteur_muret := 1.0
 
 const SHADER_ROUTE := preload("res://shaders/route_circuit.gdshader")
+const SHADER_EAU := preload("res://shaders/eau.gdshader")
+const HAUTEUR_TUNNEL := 9.0
 
 const COULEURS_BATIMENTS: Array[Color] = [
 	Color(0.55, 0.28, 0.18), Color(0.42, 0.36, 0.32), Color(0.30, 0.40, 0.42),
@@ -27,6 +31,9 @@ const COULEURS_NEONS: Array[Color] = [
 
 var courbe := Curve3D.new()
 var longueur := 0.0
+var terrain: TerrainCarte  ## null si le circuit n'a pas de carte du relief
+var ligne_depart := 0.0  ## distance de la ligne de départ
+var ligne_arrivee := 0.0  ## distance de la ligne d'arrivée
 
 var _donnees: GDScript
 var _distances_points: Array[float] = []
@@ -47,13 +54,33 @@ func _ready() -> void:
 	_donnees = load(fichier_circuit)
 	_hasard.seed = graine
 	_construire_courbe()
+	if _donnees.BOUCLE:
+		ligne_depart = 0.0
+		ligne_arrivee = 0.0
+	else:
+		ligne_depart = _constante("DEPART", 30.0)
+		ligne_arrivee = longueur - _constante("ARRIVEE", 100.0)
+	var relief: String = _constante("RELIEF", "")
+	if relief != "":
+		terrain = TerrainCarte.new(relief, _constante("ECHELLE", 1.0))
+		terrain.niveau_mer = _constante("NIVEAU_MER", 0.0)
+		terrain.hauteur_montagnes = _constante("HAUTEUR_MONTAGNES", 230.0)
 	_decouper_en_tranches()
 	_construire_route()
 	_construire_murets()
 	_construire_obstacles()
 	_construire_piliers()
-	_construire_depart()
-	_construire_sol_et_batiments()
+	_construire_portique(ligne_depart, Color(0.2, 0.9, 1.0))
+	if not _donnees.BOUCLE:
+		_construire_portique(ligne_arrivee, Color(1.0, 0.2, 0.6))
+		# Un mur au bout de la route.
+		var fin := _cadre(longueur - 2.0)
+		_construire_bloc({"a": longueur - 2.0, "decalage": 0, "taille": [fin.largeur + 1.2, 4, 2]}, _matiere(Color(0.3, 0.28, 0.3)), _matiere(Color(1.0, 0.2, 0.6), 4.0))
+	if terrain != null:
+		_construire_terrain()
+	else:
+		_construire_sol()
+	_construire_batiments()
 	_placer_vehicule()
 	_creer_affichage()
 	super()
@@ -65,6 +92,11 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("recommencer"):
 		_remettre_chrono_a_zero()
 	_suivre_les_tours(delta)
+	# Tombé de la route (dans un trou, dans la mer, du haut d'une falaise) :
+	# on réapparaît un peu plus tôt sur la route.
+	var d := distance_sur_circuit(vehicule.global_position)
+	if vehicule.global_position.y < _echantillon(d).y - 15.0:
+		vehicule.reapparaitre()
 
 
 # --- Tracé --------------------------------------------------------------------
@@ -75,10 +107,17 @@ func distance_sur_circuit(position_monde: Vector3) -> float:
 	return courbe.get_closest_offset(position_monde)
 
 
+## Une constante du fichier de circuit, ou une valeur par défaut si le
+## fichier ne la donne pas.
+func _constante(nom: String, defaut: Variant) -> Variant:
+	return _donnees.get_script_constant_map().get(nom, defaut)
+
+
 func _construire_courbe() -> void:
+	var echelle: float = _constante("ECHELLE", 1.0)
 	var points: Array[Vector3] = []
 	for p in _donnees.POINTS:
-		points.append(Vector3(p[0], p[2], p[1]))
+		points.append(Vector3(p[0] * echelle, p[2], p[1] * echelle))
 	if _donnees.BOUCLE:
 		points.append(points[0])
 
@@ -103,9 +142,12 @@ func _construire_courbe() -> void:
 	if _donnees.BOUCLE:
 		_distances_points[-1] = longueur
 
-	var texte := "%s : %d m. Points de passage :" % [_donnees.NOM, roundi(longueur)]
-	for i in _donnees.POINTS.size():
-		texte += " n°%d à %d m," % [i, roundi(_distances_points[i])]
+	var texte := "%s : %d m." % [_donnees.NOM, roundi(longueur)]
+	# Pour un petit circuit, on affiche aussi la distance de chaque point.
+	if _donnees.POINTS.size() <= 40:
+		texte += " Points de passage :"
+		for i in _donnees.POINTS.size():
+			texte += " n°%d à %d m," % [i, roundi(_distances_points[i])]
 	print(texte.trim_suffix(","))
 
 
@@ -159,7 +201,8 @@ func _reglages_a(d: float) -> Vector2:
 
 func _reglage_point(p: Array) -> Vector2:
 	var devers: float = p[3] if p.size() > 3 else 0.0
-	return Vector2(_donnees.LARGEUR, devers)
+	var largeur: float = p[4] if p.size() > 4 else _donnees.LARGEUR
+	return Vector2(largeur, devers)
 
 
 func _obstacle_a(type: String, d: float, cote := "") -> bool:
@@ -195,7 +238,8 @@ func _construire_route() -> void:
 		var uv_a: float = a.largeur * 0.5
 		var uv_b: float = b.largeur * 0.5
 		_quad(dessus, [al, ar, br, bl], a.haut,
-			[Vector2(-uv_a, a.d), Vector2(uv_a, a.d), Vector2(uv_b, b.d), Vector2(-uv_b, b.d)])
+			[Vector2(-uv_a, a.d), Vector2(uv_a, a.d), Vector2(uv_b, b.d), Vector2(-uv_b, b.d)],
+			[Vector2(uv_a, 0.0), Vector2(uv_a, 0.0), Vector2(uv_b, 0.0), Vector2(uv_b, 0.0)])
 
 		# L'épaisseur de la route : visible au bord des trous et des ravins.
 		var ea: Vector3 = a.haut * epaisseur_route
@@ -212,6 +256,9 @@ func _construire_route() -> void:
 	var matiere_route := ShaderMaterial.new()
 	matiere_route.shader = SHADER_ROUTE
 	matiere_route.set_shader_parameter("demi_largeur", _donnees.LARGEUR * 0.5)
+	matiere_route.set_shader_parameter("ligne_depart", ligne_depart)
+	if not _donnees.BOUCLE:
+		matiere_route.set_shader_parameter("ligne_arrivee", ligne_arrivee)
 	_ajouter_solide(dessus, matiere_route)
 	_ajouter_solide(dessous, _matiere(Color(0.3, 0.27, 0.28)))
 
@@ -269,6 +316,10 @@ func _construire_obstacles() -> void:
 				_construire_bloc(o, matiere_bloc, matiere_rayure)
 			"tremplin":
 				_construire_tremplin(o, tremplins)
+			"tunnel":
+				_construire_tunnel(o)
+			"pont":
+				_construire_pont(o)
 
 	_ajouter_solide(tremplins, _matiere(Color(0.95, 0.68, 0.12), 0.3))
 
@@ -330,63 +381,196 @@ func _construire_tremplin(o: Dictionary, st: SurfaceTool) -> void:
 		h_precedente = h
 
 
-# --- Piliers, départ, sol et bâtiments --------------------------------------------------
+## Un tunnel : murs, plafond, lampes au plafond, et une grande façade de
+## béton à chaque entrée.
+func _construire_tunnel(o: Dictionary) -> void:
+	var parois := SurfaceTool.new()
+	parois.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var lampes: Array[Transform3D] = []
+	var precedente := {}
+	var nombre := maxi(ceili(o.longueur / pas), 1)
+	for i in nombre + 1:
+		var t := _cadre(o.a + o.longueur * float(i) / nombre)
+		if i > 0:
+			var a := precedente
+			for cote in [-1.0, 1.0]:
+				var bas_a: Vector3 = _bord(a, cote) + a.droite * (0.6 * cote) - a.haut * 0.5
+				var bas_b: Vector3 = _bord(t, cote) + t.droite * (0.6 * cote) - t.haut * 0.5
+				var haut_a: Vector3 = bas_a + Vector3.UP * HAUTEUR_TUNNEL
+				var haut_b: Vector3 = bas_b + Vector3.UP * HAUTEUR_TUNNEL
+				_quad(parois, [bas_a, haut_a, haut_b, bas_b], -a.droite * cote)
+				# Le plafond monte un peu vers le milieu, comme une voûte.
+				var milieu_a: Vector3 = a.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.5)
+				var milieu_b: Vector3 = t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.5)
+				_quad(parois, [haut_a, milieu_a, milieu_b, haut_b], -Vector3.UP)
+		precedente = t
+	_ajouter_solide(parois, _matiere(Color(0.33, 0.31, 0.3)))
+
+	var d: float = o.a + 6.0
+	while d < o.a + o.longueur - 6.0:
+		var t := _cadre(d)
+		var base := Basis.looking_at(t.avant)
+		lampes.append(Transform3D(base.scaled_local(Vector3(0.6, 0.25, 7.0)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.2)))
+		d += 16.0
+	_ajouter_en_masse(BoxMesh.new(), lampes, [], _matiere(Color(1.0, 0.62, 0.25), 5.0))
+
+	_construire_facade(_cadre(o.a))
+	_construire_facade(_cadre(o.a + o.longueur))
+
+
+func _construire_facade(t: Dictionary) -> void:
+	var base := Basis.looking_at(Vector3(t.avant.x, 0.0, t.avant.z).normalized())
+	var demi: float = t.largeur * 0.5 + 0.6
+	var blocs: Array[Transform3D] = []
+	for cote in [-1.0, 1.0]:
+		blocs.append(Transform3D(base.scaled_local(Vector3(30.0, 70.0, 8.0)), t.pos + t.droite * ((demi + 15.0) * cote) + Vector3.UP * 5.0))
+	blocs.append(Transform3D(base.scaled_local(Vector3(demi * 2.0 + 60.0, 30.0, 8.0)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.5 + 15.0)))
+	_ajouter_en_masse(BoxMesh.new(), blocs, [], _matiere(Color(0.36, 0.33, 0.32)))
+	# Un bandeau lumineux au-dessus de l'entrée.
+	var bandeau: Array[Transform3D] = [Transform3D(base.scaled_local(Vector3(demi * 2.0, 0.6, 8.4)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 3.5))]
+	_ajouter_en_masse(BoxMesh.new(), bandeau, [], _matiere(Color(1.0, 0.62, 0.25), 4.0))
+
+
+## Un pont à haubans : deux paires de grands pylônes, d'où partent des
+## câbles en éventail qui tiennent la route.
+func _construire_pont(o: Dictionary) -> void:
+	var pylones: Array[Transform3D] = []
+	var cables: Array[Transform3D] = []
+	var feux: Array[Transform3D] = []
+	var hauteur_pylone := 75.0
+	for fraction in [0.3, 0.7]:
+		var t := _cadre(o.a + o.longueur * fraction)
+		var base := Basis.looking_at(Vector3(t.avant.x, 0.0, t.avant.z).normalized())
+		var sol := _hauteur_sol(t.pos.x, t.pos.z) - 5.0
+		var sommet: float = t.pos.y + hauteur_pylone
+		for cote in [-1.0, 1.0]:
+			var pied: Vector3 = _bord(t, cote) + t.droite * (3.0 * cote)
+			pylones.append(Transform3D(base.scaled_local(Vector3(3.5, sommet - sol, 3.5)), Vector3(pied.x, (sommet + sol) * 0.5, pied.z)))
+			feux.append(Transform3D(base.scaled_local(Vector3(1.2, 1.2, 1.2)), Vector3(pied.x, sommet + 0.8, pied.z)))
+			for k in range(1, 8):
+				for sens in [-1.0, 1.0]:
+					var accroche_t := _cadre(t.d + sens * k * 22.0)
+					var accroche: Vector3 = _bord(accroche_t, cote) + accroche_t.droite * (0.8 * cote) + Vector3.UP * 1.0
+					var haut := Vector3(pied.x, sommet - k * 3.0, pied.z)
+					cables.append(_poutre(haut, accroche, 0.25))
+		# Les traverses entre les deux pylônes, au-dessus de la route.
+		var gauche: Vector3 = _bord(t, -1.0) - t.droite * 3.0
+		var droite: Vector3 = _bord(t, 1.0) + t.droite * 3.0
+		for h in [hauteur_pylone - 2.0, hauteur_pylone * 0.55]:
+			pylones.append(_poutre(Vector3(gauche.x, t.pos.y + h, gauche.z), Vector3(droite.x, t.pos.y + h, droite.z), 2.5))
+	_ajouter_en_masse(BoxMesh.new(), pylones, [], _matiere(Color(0.42, 0.40, 0.42)))
+	_ajouter_en_masse(BoxMesh.new(), cables, [], _matiere(Color(0.75, 0.78, 0.85), 0.6))
+	_ajouter_en_masse(BoxMesh.new(), feux, [], _matiere(Color(1.0, 0.1, 0.1), 8.0))
+
+
+## Une poutre (une boîte allongée) entre deux points.
+func _poutre(a: Vector3, b: Vector3, epaisseur: float) -> Transform3D:
+	var axe := b - a
+	var y := axe.normalized()
+	var autre := Vector3.UP if absf(y.y) < 0.9 else Vector3.RIGHT
+	var x := y.cross(autre).normalized()
+	var z := x.cross(y)
+	return Transform3D(Basis(x * epaisseur, y * axe.length(), z * epaisseur), (a + b) * 0.5)
+
+
+# --- Piliers, portiques, sol et bâtiments --------------------------------------------------
+
+func _hauteur_sol(x: float, z: float) -> float:
+	if terrain != null:
+		return terrain.hauteur_naturelle(x, z)
+	return _donnees.HAUTEUR_SOL
+
 
 func _construire_piliers() -> void:
 	var piliers: Array[Transform3D] = []
 	var d := 0.0
 	while d < longueur:
-		if not _obstacle_a("trou", d):
+		if not _obstacle_a("trou", d) and not _obstacle_a("tunnel", d):
 			var t := _cadre(d)
-			var bas: float = _donnees.HAUTEUR_SOL
-			var haut: float = t.pos.y - epaisseur_route
-			if haut - bas > 3.0:
-				piliers.append(Transform3D(Basis.from_scale(Vector3(3.0, haut - bas, 3.0)), Vector3(t.pos.x, (haut + bas) * 0.5, t.pos.z)))
+			# Les routes larges ont deux rangées de piliers.
+			var decalages := [0.0] if t.largeur < 30.0 else [-t.largeur * 0.3, t.largeur * 0.3]
+			for decalage in decalages:
+				var p: Vector3 = t.pos + t.droite * float(decalage)
+				var bas := _hauteur_sol(p.x, p.z) - 2.0
+				var haut: float = p.y - epaisseur_route
+				if haut - bas > 3.0:
+					piliers.append(Transform3D(Basis.from_scale(Vector3(3.0, haut - bas, 3.0)), Vector3(p.x, (haut + bas) * 0.5, p.z)))
 		d += 40.0
 	_ajouter_en_masse(BoxMesh.new(), piliers, [], _matiere(Color(0.36, 0.33, 0.33)))
 
 
-func _construire_depart() -> void:
-	var t := _cadre(0.0)
+## Un portique au-dessus de la route (départ ou arrivée).
+func _construire_portique(d: float, couleur_neon: Color) -> void:
+	var t := _cadre(d)
 	var ecart: float = t.largeur * 0.5 + 2.5
 	var hauteur := 12.0
 	var base := Basis(t.droite, Vector3.UP, -t.avant)
 	var elements: Array[Transform3D] = []
 	for cote in [-1.0, 1.0]:
-		elements.append(Transform3D(base.scaled_local(Vector3(1.6, hauteur, 1.6)), t.pos + t.droite * (ecart * cote) + Vector3.UP * (hauteur * 0.5)))
+		elements.append(Transform3D(base.scaled_local(Vector3(1.6, hauteur + 20.0, 1.6)), t.pos + t.droite * (ecart * cote) + Vector3.UP * (hauteur * 0.5 - 10.0)))
 	elements.append(Transform3D(base.scaled_local(Vector3(ecart * 2.0 + 1.6, 1.8, 2.2)), t.pos + Vector3.UP * hauteur))
 	_ajouter_en_masse(BoxMesh.new(), elements, [], _matiere(Color(0.38, 0.34, 0.33)))
 	var neon: Array[Transform3D] = [Transform3D(base.scaled_local(Vector3(ecart * 2.0 - 2.0, 0.4, 0.4)), t.pos + Vector3.UP * (hauteur - 1.1))]
-	_ajouter_en_masse(BoxMesh.new(), neon, [], _matiere(Color(0.2, 0.9, 1.0), 5.0))
+	_ajouter_en_masse(BoxMesh.new(), neon, [], _matiere(couleur_neon, 5.0))
 
 
-func _construire_sol_et_batiments() -> void:
-	var sol_y: float = _donnees.HAUTEUR_SOL
+## Les limites du circuit vu de dessus (x, z), avec une marge.
+func _emprise(marge: float) -> Rect2:
 	var mini := Vector2(INF, INF)
 	var maxi := Vector2(-INF, -INF)
 	for t in _tranches:
 		mini = Vector2(minf(mini.x, t.pos.x), minf(mini.y, t.pos.z))
 		maxi = Vector2(maxf(maxi.x, t.pos.x), maxf(maxi.y, t.pos.z))
-	var centre := (mini + maxi) * 0.5
-	var etendue := (maxi - mini) * 0.5 + Vector2(500.0, 500.0)
+	return Rect2(mini, maxi - mini).grow(marge)
 
+
+## Sol plat (circuits sans carte du relief).
+func _construire_sol() -> void:
+	var zone := _emprise(1500.0)
 	var sol := PlaneMesh.new()
-	sol.size = etendue * 2.0 + Vector2(2000.0, 2000.0)
+	sol.size = zone.size
 	var instance := MeshInstance3D.new()
 	instance.mesh = sol
 	instance.material_override = _matiere(Color(0.45, 0.25, 0.18))
-	instance.position = Vector3(centre.x, sol_y, centre.y)
+	instance.position = Vector3(zone.get_center().x, _donnees.HAUTEUR_SOL, zone.get_center().y)
 	add_child(instance)
 
-	# Bâtiments tirés au hasard autour du circuit, jamais sur la route.
+
+## Mer, terre et montagnes, d'après la carte du relief.
+func _construire_terrain() -> void:
+	var zone := _emprise(2000.0)
+	var debut := Time.get_ticks_msec()
+	var mesh := terrain.construire(_tranches, func(d: float) -> bool: return _obstacle_a("tunnel", d), zone.position, zone.end)
+	_ajouter_visuel_mesh(mesh, _matiere(Color.WHITE))
+	print("Terrain construit en %d ms" % (Time.get_ticks_msec() - debut))
+
+	var mer := PlaneMesh.new()
+	mer.size = zone.size * 3.0
+	var matiere_mer := ShaderMaterial.new()
+	matiere_mer.shader = SHADER_EAU
+	_matieres_decor.append(matiere_mer)
+	var instance := MeshInstance3D.new()
+	instance.mesh = mer
+	instance.material_override = matiere_mer
+	instance.position = Vector3(zone.get_center().x, terrain.niveau_mer, zone.get_center().y)
+	add_child(instance)
+
+
+## Bâtiments tirés au hasard autour du circuit, jamais sur la route.
+func _construire_batiments() -> void:
+	var nombre: int = _constante("BATIMENTS", nombre_batiments)
+	if nombre <= 0:
+		return
+	var zone := _emprise(500.0)
+	var sol_y: float = _donnees.HAUTEUR_SOL
 	var batiments: Array[Transform3D] = []
 	var couleurs: Array[Color] = []
 	var marge: float = _donnees.LARGEUR * 0.5 + 18.0
 	var essais := 0
-	while batiments.size() < nombre_batiments and essais < nombre_batiments * 20:
+	while batiments.size() < nombre and essais < nombre * 20:
 		essais += 1
-		var x := _hasard.randf_range(centre.x - etendue.x, centre.x + etendue.x)
-		var z := _hasard.randf_range(centre.y - etendue.y, centre.y + etendue.y)
+		var x := _hasard.randf_range(zone.position.x, zone.end.x)
+		var z := _hasard.randf_range(zone.position.y, zone.end.y)
 		var taille := Vector3(_hasard.randf_range(10, 35), _hasard.randf_range(30, 110), _hasard.randf_range(10, 35))
 		var proche := courbe.get_closest_point(Vector3(x, 0.0, z))
 		var ecart := Vector2(proche.x - x, proche.z - z).length()
@@ -404,10 +588,12 @@ func _placer_vehicule() -> void:
 	if vehicule == null:
 		return
 	# On part juste avant la ligne : le chrono démarre en la franchissant.
-	var t := _cadre(longueur - 12.0 if _donnees.BOUCLE else 2.0)
+	var t := _cadre(longueur - 12.0 if _donnees.BOUCLE else ligne_depart - 14.0)
 	var avant := Vector3(t.avant.x, 0.0, t.avant.z).normalized()
 	vehicule.piste_droite = false
-	vehicule.hauteur_chute = _donnees.HAUTEUR_SOL + 3.0
+	# La chute est surveillée par le circuit (voir _physics_process) ; le
+	# bolide ne garde qu'une limite de secours, tout en bas.
+	vehicule.hauteur_chute = _donnees.HAUTEUR_SOL - 50.0
 	vehicule.global_transform = Transform3D(Basis.looking_at(avant), t.pos + t.haut * 0.3)
 
 
@@ -441,6 +627,12 @@ func _suivre_les_tours(delta: float) -> void:
 			_ligne_franchie()
 		elif _distance_precedente < quart and d > longueur - quart and _tour > 0:
 			_tour -= 1  # franchie à l'envers
+	elif not _donnees.BOUCLE and _distance_precedente >= 0.0:
+		# Course d'un point à un autre : une ligne de départ, une d'arrivée.
+		if _tour == 0 and _distance_precedente < ligne_depart and d >= ligne_depart:
+			_tour = 1
+		elif _tour == 1 and d >= ligne_arrivee:
+			_ligne_franchie()
 	_distance_precedente = d
 	_mettre_a_jour_affichage()
 
@@ -472,11 +664,13 @@ func _mettre_a_jour_affichage() -> void:
 	if _termine:
 		texte = "Terminé ! %s" % _format_temps(_temps_total)
 	elif _tour == 0:
-		texte = "Franchis la ligne pour lancer le chrono"
-	else:
+		texte = "Chrono : franchis la ligne"
+	elif _donnees.BOUCLE:
 		texte = "Tour %d / %d   %s" % [_tour, _donnees.TOURS, _format_temps(_temps_tour)]
+	else:
+		texte = "%s   %d m" % [_format_temps(_temps_total), maxi(roundi(ligne_arrivee - _distance_precedente), 0)]
 	if _meilleur_tour < INF:
-		texte += "\nMeilleur tour %s" % _format_temps(_meilleur_tour)
+		texte += "\n%s %s" % ["Meilleur tour" if _donnees.BOUCLE else "Meilleur temps", _format_temps(_meilleur_tour)]
 	_affichage.text = texte
 
 
@@ -488,7 +682,7 @@ func _format_temps(secondes: float) -> String:
 
 ## Ajoute un quadrilatère (deux triangles). Les sommets sont donnés dans
 ## l'ordre du tour ; « normale » indique le côté visible.
-func _quad(st: SurfaceTool, p: Array, normale: Vector3, uv: Array = []) -> void:
+func _quad(st: SurfaceTool, p: Array, normale: Vector3, uv: Array = [], uv2: Array = []) -> void:
 	for tri in [[0, 1, 2], [0, 2, 3]]:
 		var ordre: Array = tri
 		# Godot affiche les triangles dont les sommets tournent dans le sens
@@ -502,6 +696,8 @@ func _quad(st: SurfaceTool, p: Array, normale: Vector3, uv: Array = []) -> void:
 			st.set_normal(normale)
 			if not uv.is_empty():
 				st.set_uv(uv[k])
+			if not uv2.is_empty():
+				st.set_uv2(uv2[k])
 			st.add_vertex(p[k])
 
 

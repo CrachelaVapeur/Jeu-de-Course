@@ -222,6 +222,11 @@ func _surveiller_chute(delta: float) -> void:
 			_historique.pop_front()
 
 
+## Remet le bolide sur la route, un peu avant l'endroit où il est tombé.
+func reapparaitre() -> void:
+	_reapparaitre()
+
+
 func _reapparaitre() -> void:
 	# On repart d'une position notée environ 1,5 s avant la chute, donc
 	# avant le trou, avec un peu de vitesse pour ne pas repartir de zéro.
