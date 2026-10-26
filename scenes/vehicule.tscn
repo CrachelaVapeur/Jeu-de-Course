@@ -20,6 +20,34 @@ emission_enabled = true
 emission = Color(0.3, 0.9, 1, 1)
 emission_energy_multiplier = 4.0
 
+[sub_resource type="StandardMaterial3D" id="feu_orange"]
+albedo_color = Color(1, 0.4, 0.05, 1)
+emission_enabled = true
+emission = Color(1, 0.42, 0.05, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="StandardMaterial3D" id="feu_jaune"]
+albedo_color = Color(1, 0.85, 0.2, 1)
+emission_enabled = true
+emission = Color(1, 0.85, 0.25, 1)
+emission_energy_multiplier = 4.0
+
+[sub_resource type="CylinderMesh" id="cone_feu"]
+material = SubResource("feu_orange")
+top_radius = 0.0
+bottom_radius = 0.13
+height = 1.0
+radial_segments = 8
+rings = 1
+
+[sub_resource type="CylinderMesh" id="cone_coeur"]
+material = SubResource("feu_jaune")
+top_radius = 0.0
+bottom_radius = 0.065
+height = 0.8
+radial_segments = 8
+rings = 1
+
 [sub_resource type="CapsuleShape3D" id="forme_collision"]
 radius = 0.55
 height = 4.2
@@ -76,7 +104,12 @@ transform = Transform3D(1, 0, 0, 0, 0.766, -0.643, 0, 0.643, 0.766, 0, 0, 0)
 
 [node name="Mesh" type="MeshInstance3D" parent="Carrosserie/SortieG/Flamme"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
-mesh = SubResource("cone_flamme")
+mesh = SubResource("cone_feu")
+cast_shadow = 0
+
+[node name="Coeur" type="MeshInstance3D" parent="Carrosserie/SortieG/Flamme"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+mesh = SubResource("cone_coeur")
 cast_shadow = 0
 
 [node name="SortieD" type="Node3D" parent="Carrosserie"]
@@ -87,7 +120,12 @@ transform = Transform3D(1, 0, 0, 0, 0.766, -0.643, 0, 0.643, 0.766, 0, 0, 0)
 
 [node name="Mesh" type="MeshInstance3D" parent="Carrosserie/SortieD/Flamme"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
-mesh = SubResource("cone_flamme")
+mesh = SubResource("cone_feu")
+cast_shadow = 0
+
+[node name="Coeur" type="MeshInstance3D" parent="Carrosserie/SortieD/Flamme"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+mesh = SubResource("cone_coeur")
 cast_shadow = 0
 
 [node name="Trainee" type="MeshInstance3D" parent="Carrosserie/ReacteurG/Flamme" node_paths=PackedStringArray("vehicule")]

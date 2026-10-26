@@ -359,8 +359,8 @@ func _animer(delta: float) -> void:
 
 	# Flammes latérales : de plus en plus longues avec la vitesse, énormes en boost.
 	var allure_flamme := clampf(ratio_vitesse(), 0.0, 1.0)
-	var longueur_laterale := pow(allure_flamme, 2.0) * 1.6 + (6.0 if en_boost else 0.0)
-	var largeur_laterale := 1.6 + (2.4 if en_boost else 0.0)
+	var longueur_laterale := pow(allure_flamme, 2.0) * 0.8 + (2.2 if en_boost else 0.0)
+	var largeur_laterale := 1.0 + (0.8 if en_boost else 0.0)
 	_longueur_laterale = lerpf(_longueur_laterale, longueur_laterale, lissage)
 	_largeur_laterale = lerpf(_largeur_laterale, largeur_laterale, lissage)
 	for flamme in _flammes_laterales:
