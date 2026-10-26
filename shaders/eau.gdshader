@@ -22,8 +22,8 @@ void fragment() {
 	vec2 p = position_monde.xz / vec2(14.0, 4.0) + vec2(TIME * 0.15, 0.0);
 	vec2 cellule = floor(p);
 	vec2 dedans = fract(p);
-	float trait = step(0.82, hasard(cellule)) * step(abs(dedans.y - 0.5), 0.06) * step(0.2, dedans.x) * step(dedans.x, 0.8);
-	vec3 c = mix(couleur.rgb, couleur_rides.rgb, trait * 0.6);
+	float trait = step(0.93, hasard(cellule)) * step(abs(dedans.y - 0.5), 0.06) * step(0.2, dedans.x) * step(dedans.x, 0.8);
+	vec3 c = mix(couleur.rgb, couleur_rides.rgb, trait * 0.35);
 	float gris = dot(c, vec3(0.299, 0.587, 0.114));
 	ALBEDO = mix(c, vec3(gris), noir_et_blanc);
 	ROUGHNESS = 0.2;

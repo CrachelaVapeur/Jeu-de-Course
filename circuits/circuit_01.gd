@@ -30,7 +30,21 @@ const ARRIVEE := 200.0  ## la ligne d'arrivée, en mètres AVANT la fin de la ro
 const RELIEF := "res://circuits/circuit_01_relief.png"
 const NIVEAU_MER := 0.0
 const HAUTEUR_MONTAGNES := 230.0
-const BATIMENTS := 0  ## les villes arrivent à l'étape suivante
+const BATIMENTS := 0  ## pas de bâtiments au hasard : les villes sont placées ci-dessous
+
+## Les villes : centre et rayon en pixels de la carte, hauteur des plus
+## grandes tours en mètres.
+const VILLES := [
+	{"centre": [690, 625], "rayon": 175, "hauteur_max": 150},  # Cyber City 1
+	{"centre": [1150, 745], "rayon": 180, "hauteur_max": 220},  # Cyber City 2
+]
+
+## Les grands monuments, eux aussi placés en pixels de la carte.
+const MONUMENTS := [
+	{"type": "pyramide", "position": [725, 640], "base": 300, "hauteur": 210},
+	{"type": "cheminees", "position": [775, 568]},
+	{"type": "phare", "position": [1283, 850], "hauteur": 250},
+]
 
 const POINTS := [
 	[50.0, 619.0, 91, -1, 26],  # 0 m

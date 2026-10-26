@@ -78,6 +78,9 @@ func _ready() -> void:
 		_construire_bloc({"a": longueur - 2.0, "decalage": 0, "taille": [fin.largeur + 1.2, 4, 2]}, _matiere(Color(0.3, 0.28, 0.3)), _matiere(Color(1.0, 0.2, 0.6), 4.0))
 	if terrain != null:
 		_construire_terrain()
+		var villes: Array = _constante("VILLES", [])
+		var monuments: Array = _constante("MONUMENTS", [])
+		Villes.new(self, _constante("ECHELLE", 1.0), graine).construire(villes, monuments)
 	else:
 		_construire_sol()
 	_construire_batiments()
@@ -203,6 +206,11 @@ func _reglage_point(p: Array) -> Vector2:
 	var devers: float = p[3] if p.size() > 3 else 0.0
 	var largeur: float = p[4] if p.size() > 4 else _donnees.LARGEUR
 	return Vector2(largeur, devers)
+
+
+## Largeur de la route à l'endroit le plus proche d'un point vu de dessus.
+func largeur_route_pres(p: Vector2) -> float:
+	return _reglages_a(courbe.get_closest_offset(Vector3(p.x, 0.0, p.y))).x
 
 
 func _obstacle_a(type: String, d: float, cote := "") -> bool:

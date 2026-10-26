@@ -42,7 +42,9 @@ Les effets qui donnent la vitesse :
 
 ![Le pont au-dessus de l'embouchure, de nuit](docs/circuit_01/capture_pont.png)
 
-C'est la scène lancée par **F5** : `scenes/circuit_01.tscn`. Une course de nuit d'environ 15 km, d'un point à un autre, d'après la carte annotée d'Eric (`docs/circuit_01/`) : départ dans un canyon, long tunnel, Cyber City 1, pont à haubans au-dessus de l'embouchure, montée dans la montagne, saut au-dessus d'une crevasse, zone cratère, Cyber City 2 et longue ligne droite finale. Les villes, le cratère et son monstre, et les repères lumineux arrivent dans les prochaines étapes.
+C'est la scène lancée par **F5** : `scenes/circuit_01.tscn`. Une course de nuit d'environ 15 km, d'un point à un autre, d'après la carte annotée d'Eric (`docs/circuit_01/`) : départ dans un canyon, long tunnel, Cyber City 1, pont à haubans au-dessus de l'embouchure, montée dans la montagne, saut au-dessus d'une crevasse, zone cratère, Cyber City 2 et longue ligne droite finale. Les deux villes sont là : immeubles aux fenêtres éclairées par endroits, enseignes, pyramide lumineuse avec ses projecteurs, cheminées d'usine, et un phare géant au faisceau tournant. Le cratère et son monstre, et les repères lumineux, arrivent dans les prochaines étapes.
+
+![Les villes, la pyramide et le phare](docs/circuit_01/vue_villes.png)
 
 Le sol (mer, terre ferme, montagnes en falaises) est construit à partir d'une petite image, `circuits/circuit_01_relief.png` : rouge = montagnes, vert = terre, noir = mer. On peut la repeindre dans n'importe quel logiciel de dessin.
 
@@ -76,6 +78,8 @@ scripts/
   circuit.gd            Construction de la ligne droite par le code
   circuit_trace.gd      Construction d'un circuit à partir d'un fichier de données
   terrain_carte.gd      Le sol : mer, terre et montagnes, d'après la carte du relief
+  villes.gd             Les villes et les monuments (pyramide, cheminées, phare)
+  tourner.gd            Fait tourner un objet (faisceau du phare)
   son_moteur.gd         Son de moteur généré en direct
   hud.gd                Compteur, jauge de boost, lignes de vitesse
 shaders/
@@ -84,6 +88,9 @@ shaders/
   route.gdshader        Marquages de la piste
   route_circuit.gdshader  Marquages qui suivent les virages des circuits
   eau.gdshader          La mer de nuit
+  immeuble.gdshader     Les fenêtres allumées des immeubles
+  faisceau.gdshader     Les faisceaux de lumière
+  halo.gdshader         Les halos lumineux
   lignes_vitesse.gdshader  Lignes de vitesse à l'écran
 ```
 
