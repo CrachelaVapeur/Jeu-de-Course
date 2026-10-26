@@ -42,7 +42,7 @@ Les effets qui donnent la vitesse :
 
 ![Le pont au-dessus de l'embouchure, de nuit](docs/circuit_01/capture_pont.png)
 
-C'est la scène lancée par **F5** : `scenes/circuit_01.tscn`. Une course de nuit d'environ 15 km, d'un point à un autre, d'après la carte annotée d'Eric (`docs/circuit_01/`) : départ dans un canyon, long tunnel, Cyber City 1, pont à haubans au-dessus de l'embouchure, montée dans la montagne, saut au-dessus d'une crevasse, zone cratère, Cyber City 2 et longue ligne droite finale. Les deux villes sont là : immeubles aux fenêtres éclairées par endroits, enseignes, pyramide lumineuse avec ses projecteurs, cheminées d'usine, et un phare géant au faisceau tournant. Le cratère et son monstre, et les repères lumineux, arrivent dans les prochaines étapes.
+C'est la scène lancée par **F5** : `scenes/circuit_01.tscn`. Une course de nuit d'environ 15 km, d'un point à un autre, d'après la carte annotée d'Eric (`docs/circuit_01/`) : départ dans un canyon, long tunnel, Cyber City 1, pont à haubans au-dessus de l'embouchure, montée dans la montagne, saut au-dessus d'une crevasse, zone cratère, Cyber City 2 et longue ligne droite finale. Les deux villes sont là : immeubles aux fenêtres éclairées par endroits, enseignes, pyramide lumineuse avec ses projecteurs, cheminées d'usine, et un phare géant au faisceau tournant. Le cratère est un grand espace libre au sol de roche fendue de lave, avec des puits de lave où l'on tombe, des rochers à contourner, et un monstre géant (une silhouette provisoire en blocs) qui s'y promène au hasard : il est solide, et ses pas font trembler la caméra. Les repères lumineux le long de la route arrivent à l'étape suivante.
 
 ![Les villes, la pyramide et le phare](docs/circuit_01/vue_villes.png)
 
@@ -80,6 +80,8 @@ scripts/
   terrain_carte.gd      Le sol : mer, terre et montagnes, d'après la carte du relief
   villes.gd             Les villes et les monuments (pyramide, cheminées, phare)
   tourner.gd            Fait tourner un objet (faisceau du phare)
+  cratere.gd            La zone cratère : puits de lave, rochers, monstre
+  monstre.gd            Le monstre qui erre dans le cratère
   son_moteur.gd         Son de moteur généré en direct
   hud.gd                Compteur, jauge de boost, lignes de vitesse
 shaders/

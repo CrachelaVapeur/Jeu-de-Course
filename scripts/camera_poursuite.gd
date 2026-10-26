@@ -58,3 +58,8 @@ func _physics_process(delta: float) -> void:
 
 func _sur_choc(force: float) -> void:
 	_secousse = maxf(_secousse, clampf(force / 40.0, 0.15, 0.8))
+
+
+## Fait trembler la caméra (pas du monstre, explosions…). force : 0 à 40 environ.
+func secouer(force: float) -> void:
+	_sur_choc(force)

@@ -81,6 +81,7 @@ func _ready() -> void:
 		var villes: Array = _constante("VILLES", [])
 		var monuments: Array = _constante("MONUMENTS", [])
 		Villes.new(self, _constante("ECHELLE", 1.0), graine).construire(villes, monuments)
+		Cratere.new(self, graine).construire(_donnees.OBSTACLES)
 	else:
 		_construire_sol()
 	_construire_batiments()
@@ -245,9 +246,13 @@ func _construire_route() -> void:
 		var br := _bord(b, 1.0)
 		var uv_a: float = a.largeur * 0.5
 		var uv_b: float = b.largeur * 0.5
-		_quad(dessus, [al, ar, br, bl], a.haut,
-			[Vector2(-uv_a, a.d), Vector2(uv_a, a.d), Vector2(uv_b, b.d), Vector2(-uv_b, b.d)],
-			[Vector2(uv_a, 0.0), Vector2(uv_a, 0.0), Vector2(uv_b, 0.0), Vector2(uv_b, 0.0)])
+		var milieu: float = (a.d + b.d) * 0.5
+		if _obstacle_a("cratere", milieu):
+			_construire_sol_cratere(dessus, a, b, milieu)
+		else:
+			_quad(dessus, [al, ar, br, bl], a.haut,
+				[Vector2(-uv_a, a.d), Vector2(uv_a, a.d), Vector2(uv_b, b.d), Vector2(-uv_b, b.d)],
+				[Vector2(uv_a, 0.0), Vector2(uv_a, 0.0), Vector2(uv_b, 0.0), Vector2(uv_b, 0.0)])
 
 		# L'épaisseur de la route : visible au bord des trous et des ravins.
 		var ea: Vector3 = a.haut * epaisseur_route
@@ -271,11 +276,43 @@ func _construire_route() -> void:
 	_ajouter_solide(dessous, _matiere(Color(0.3, 0.27, 0.28)))
 
 
+## Dans le cratère, le sol est découpé en petits carreaux pour pouvoir
+## laisser des puits de lave (on n'y pose pas les carreaux).
+## UV2.y = 1 indique au shader de la route que c'est le sol du cratère.
+func _construire_sol_cratere(st: SurfaceTool, a: Dictionary, b: Dictionary, milieu: float) -> void:
+	var demi_a: float = a.largeur * 0.5
+	var demi_b: float = b.largeur * 0.5
+	var nombre := ceili(maxf(a.largeur, b.largeur) / 4.0)
+	for c in nombre:
+		var f0 := -1.0 + 2.0 * c / nombre
+		var f1 := -1.0 + 2.0 * (c + 1) / nombre
+		if _dans_un_puits(milieu, (f0 + f1) * 0.5 * (demi_a + demi_b) * 0.5):
+			continue
+		var p := [
+			a.pos + a.droite * (demi_a * f0), a.pos + a.droite * (demi_a * f1),
+			b.pos + b.droite * (demi_b * f1), b.pos + b.droite * (demi_b * f0),
+		]
+		_quad(st, p, a.haut,
+			[Vector2(demi_a * f0, a.d), Vector2(demi_a * f1, a.d), Vector2(demi_b * f1, b.d), Vector2(demi_b * f0, b.d)],
+			[Vector2(demi_a, 1.0), Vector2(demi_a, 1.0), Vector2(demi_b, 1.0), Vector2(demi_b, 1.0)])
+
+
+## Vrai si un point du cratère (distance sur le circuit, décalage latéral)
+## tombe dans un puits de lave.
+func _dans_un_puits(d: float, decalage: float) -> bool:
+	for o in _donnees.OBSTACLES:
+		if o.type == "puits" and Vector2(d - o.a, decalage - o.decalage).length() < o.rayon:
+			return true
+	return false
+
+
 func _construire_murets() -> void:
 	var murets := SurfaceTool.new()
 	murets.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var neons := SurfaceTool.new()
 	neons.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var invisibles := SurfaceTool.new()
+	invisibles.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var epaisseur := 0.6
 
 	for i in _tranches.size() - 1:
@@ -286,6 +323,12 @@ func _construire_murets() -> void:
 			continue
 		for cote in [-1.0, 1.0]:
 			if _obstacle_a("sans_muret", milieu, "gauche" if cote < 0.0 else "droite"):
+				continue
+			if _obstacle_a("cratere", milieu):
+				# Un mur invisible, assez haut pour ne pas sortir du cratère.
+				var ba := _bord(a, cote)
+				var bb := _bord(b, cote)
+				_quad(invisibles, [ba, ba + Vector3.UP * 4.0, bb + Vector3.UP * 4.0, bb], -a.droite * cote)
 				continue
 			var ia := _bord(a, cote)
 			var ib := _bord(b, cote)
@@ -308,6 +351,7 @@ func _construire_murets() -> void:
 
 	_ajouter_solide(murets, _matiere(Color(0.25, 0.24, 0.26)))
 	_ajouter_visuel(neons, _matiere(Color.WHITE, 4.0))
+	_ajouter_collision(invisibles)
 
 
 # --- Obstacles -----------------------------------------------------------------
@@ -493,7 +537,7 @@ func _construire_piliers() -> void:
 	var piliers: Array[Transform3D] = []
 	var d := 0.0
 	while d < longueur:
-		if not _obstacle_a("trou", d) and not _obstacle_a("tunnel", d):
+		if not _obstacle_a("trou", d) and not _obstacle_a("tunnel", d) and not _obstacle_a("cratere", d):
 			var t := _cadre(d)
 			# Les routes larges ont deux rangées de piliers.
 			var decalages := [0.0] if t.largeur < 30.0 else [-t.largeur * 0.3, t.largeur * 0.3]
@@ -548,7 +592,13 @@ func _construire_sol() -> void:
 func _construire_terrain() -> void:
 	var zone := _emprise(2000.0)
 	var debut := Time.get_ticks_msec()
-	var mesh := terrain.construire(_tranches, func(d: float) -> bool: return _obstacle_a("tunnel", d), zone.position, zone.end)
+	var zone_a := func(d: float) -> int:
+		if _obstacle_a("tunnel", d):
+			return TerrainCarte.ZONE_TUNNEL
+		if _obstacle_a("cratere", d):
+			return TerrainCarte.ZONE_CRATERE
+		return TerrainCarte.ZONE_ROUTE
+	var mesh := terrain.construire(_tranches, zone_a, zone.position, zone.end)
 	_ajouter_visuel_mesh(mesh, _matiere(Color.WHITE))
 	print("Terrain construit en %d ms" % (Time.get_ticks_msec() - debut))
 
@@ -715,6 +765,17 @@ func _ajouter_solide(st: SurfaceTool, matiere: Material) -> void:
 	if mesh.get_surface_count() == 0:
 		return
 	_ajouter_visuel_mesh(mesh, matiere)
+	_ajouter_collision_mesh(mesh)
+
+
+## Ajoute un objet solide mais invisible.
+func _ajouter_collision(st: SurfaceTool) -> void:
+	var mesh := st.commit()
+	if mesh.get_surface_count() > 0:
+		_ajouter_collision_mesh(mesh)
+
+
+func _ajouter_collision_mesh(mesh: Mesh) -> void:
 	var corps := StaticBody3D.new()
 	var forme := CollisionShape3D.new()
 	var trimesh := mesh.create_trimesh_shape()

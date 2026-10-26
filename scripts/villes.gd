@@ -189,7 +189,7 @@ func _construire_pyramide(m: Dictionary) -> void:
 	# Des projecteurs qui partent du sommet en éventail, comme sur la carte.
 	for k in 4:
 		var direction := Vector3(cos(k * TAU / 4.0 + 0.4), 0.55, sin(k * TAU / 4.0 + 0.4)).normalized()
-		_ajouter_faisceau(sommet, direction, 900.0, 40.0, Color(1.0, 0.85, 0.6), 0.18)
+		_ajouter_faisceau(sommet, direction, 900.0, 40.0, Color(1.0, 0.85, 0.6), 0.3)
 
 
 ## Trois grosses cheminées d'usine en chantier, avec des grues et des feux.
@@ -258,7 +258,7 @@ func _construire_phare(m: Dictionary) -> void:
 	_circuit.add_child(pivot)
 	for sens in [-1.0, 1.0]:
 		# Le cône est couché à l'horizontale, sa pointe sur la lanterne.
-		var faisceau := _faisceau(1600.0, 70.0, Color(1.0, 0.95, 0.8), 0.22)
+		var faisceau := _faisceau(1600.0, 70.0, Color(1.0, 0.95, 0.8), 0.35)
 		faisceau.rotation.z = PI * 0.5 * sens
 		faisceau.position = Vector3(800.0 * sens, 0.0, 0.0)
 		pivot.add_child(faisceau)

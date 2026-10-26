@@ -6,7 +6,11 @@ extends RefCounted
 ##
 ## Le sol s'adapte à la route : il est creusé quand la route passe dans la
 ## montagne, il remonte sous la route quand elle frôle le sol, et il reste
-## au-dessus des tunnels.
+## au-dessus des tunnels. Autour du cratère, il forme un rebord.
+
+const ZONE_ROUTE := 0
+const ZONE_TUNNEL := 1
+const ZONE_CRATERE := 2
 
 var niveau_mer := 0.0
 var hauteur_montagnes := 230.0
@@ -51,8 +55,8 @@ func hauteur_naturelle(x: float, z: float) -> float:
 
 ## Construit le maillage du sol autour de la route.
 ## tranches : les tranches de la route (voir circuit_trace.gd) ;
-## dans_tunnel : une fonction qui dit si une distance est dans un tunnel.
-func construire(tranches: Array[Dictionary], dans_tunnel: Callable, coin_min: Vector2, coin_max: Vector2, pas_grille := 20.0) -> ArrayMesh:
+## zone_a : une fonction qui donne le type de zone (ZONE_…) à une distance.
+func construire(tranches: Array[Dictionary], zone_a: Callable, coin_min: Vector2, coin_max: Vector2, pas_grille := 20.0) -> ArrayMesh:
 	var nx := ceili((coin_max.x - coin_min.x) / pas_grille) + 1
 	var nz := ceili((coin_max.y - coin_min.y) / pas_grille) + 1
 	var total := nx * nz
@@ -71,14 +75,14 @@ func construire(tranches: Array[Dictionary], dans_tunnel: Callable, coin_min: Ve
 	hauteur_route.resize(total)
 	var demi_largeur := PackedFloat32Array()
 	demi_largeur.resize(total)
-	var tunnel := PackedByteArray()
-	tunnel.resize(total)
+	var zone := PackedByteArray()
+	zone.resize(total)
 	for n in range(0, tranches.size(), 2):
 		var t: Dictionary = tranches[n]
 		var demi: float = t.largeur * 0.5
-		var rayon := demi + 75.0
+		var type_zone: int = zone_a.call(t.d)
+		var rayon := demi + (150.0 if type_zone == ZONE_CRATERE else 75.0)
 		var pos: Vector3 = t.pos
-		var en_tunnel: bool = dans_tunnel.call(t.d)
 		var i0 := maxi(floori((pos.x - rayon - coin_min.x) / pas_grille), 0)
 		var i1 := mini(ceili((pos.x + rayon - coin_min.x) / pas_grille), nx - 1)
 		var j0 := maxi(floori((pos.z - rayon - coin_min.y) / pas_grille), 0)
@@ -91,7 +95,7 @@ func construire(tranches: Array[Dictionary], dans_tunnel: Callable, coin_min: Ve
 					distance[k] = d
 					hauteur_route[k] = pos.y
 					demi_largeur[k] = demi
-					tunnel[k] = 1 if en_tunnel else 0
+					zone[k] = type_zone
 
 	for k in total:
 		var d := distance[k]
@@ -100,10 +104,19 @@ func construire(tranches: Array[Dictionary], dans_tunnel: Callable, coin_min: Ve
 		var naturel := hauteurs[k]
 		var route := hauteur_route[k]
 		var demi := demi_largeur[k]
-		if tunnel[k] == 1:
+		if zone[k] == ZONE_TUNNEL:
 			# La montagne reste au-dessus du tunnel.
 			if d < demi + 30.0:
 				hauteurs[k] = maxf(naturel, route + 20.0)
+		elif zone[k] == ZONE_CRATERE:
+			# Le fond du cratère, puis un rebord qui remonte et redescend.
+			var bord := demi + 20.0
+			if d < bord:
+				hauteurs[k] = route - 0.4
+			else:
+				var fond := lerpf(route - 0.4, naturel, smoothstep(bord, bord + 140.0, d))
+				var rebord := route + 22.0 * sin(PI * clampf((d - bord) / 120.0, 0.0, 1.0))
+				hauteurs[k] = maxf(fond, rebord)
 		elif naturel > route - 1.5:
 			# La route passe dans la montagne : on creuse une tranchée.
 			hauteurs[k] = lerpf(route - 1.5, naturel, smoothstep(demi + 20.0, demi + 70.0, d))
