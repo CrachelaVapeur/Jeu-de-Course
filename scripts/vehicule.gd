@@ -23,9 +23,9 @@ signal atterrissage(force: float)
 
 @export_group("Vitesse (en mètres par seconde, ×3.6 pour des km/h)")
 @export var vitesse_max := 75.0
-@export var vitesse_boost := 139.0  ## 500 km/h : la vitesse la plus haute du jeu
+@export var vitesse_boost := 146.0  ## environ 525 km/h : la vitesse la plus haute du jeu
 @export var acceleration := 26.0
-@export var acceleration_boost := 60.0  ## atteinte au bout de la montée du boost
+@export var acceleration_boost := 82.0  ## atteinte au bout de la montée du boost
 @export var freinage := 60.0
 @export var frottement := 8.0
 
@@ -37,13 +37,14 @@ signal atterrissage(force: float)
 
 @export_group("Boost")
 @export var jauge_max := 100.0
-@export var consommation := 22.0  ## par seconde de boost
+@export var consommation := 30.0  ## par seconde de boost
 @export var recharge := 10.0  ## par seconde sans boost
 @export var attaque_distorsion := 8.0  ## vitesse à laquelle l'effet de boost s'installe
 @export var relachement_distorsion := 2.5  ## vitesse à laquelle il s'efface après le boost
 ## Secondes pour que le boost donne toute sa poussée : il démarre doucement,
 ## puis pousse de plus en plus fort (une courbe qui se creuse, pas un coup sec).
-@export var duree_montee_boost := 2.5
+## 0 = toute la poussée d'un coup.
+@export var duree_montee_boost := 0.0
 
 @export_group("Circuit")
 ## Coché : ancienne ligne droite d'essai. Décoché : vrai circuit avec relief.
@@ -131,7 +132,7 @@ func _conduire(delta: float) -> void:
 
 	if en_boost:
 		jauge_boost = maxf(jauge_boost - consommation * delta, 0.0)
-		montee_boost = minf(montee_boost + delta / duree_montee_boost, 1.0)
+		montee_boost = minf(montee_boost + delta / duree_montee_boost, 1.0) if duree_montee_boost > 0.0 else 1.0
 		# La poussée grandit avec le carré de la montée : douce au début, très
 		# forte à la fin.
 		var poussee := lerpf(0.15, 1.0, montee_boost * montee_boost)

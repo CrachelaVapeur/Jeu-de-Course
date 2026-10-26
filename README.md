@@ -26,7 +26,7 @@ En QWERTY, ce sont les touches W A S D, à la même place.
 
 ![Le prototype en plein boost](docs/capture_boost.png)
 
-Ce premier prototype sert à régler la **sensation de vitesse**. Il propose une ligne droite sans fin dans une ville industrielle au coucher du soleil, avec un bolide qui va de 270 km/h en vitesse normale à 500 km/h en boost. Le boost démarre doucement puis pousse de plus en plus fort.
+Ce premier prototype sert à régler la **sensation de vitesse**. Il propose une ligne droite sans fin dans une ville industrielle au coucher du soleil, avec un bolide qui va de 270 km/h en vitesse normale à environ 525 km/h en boost.
 
 Les effets qui donnent la vitesse :
 
