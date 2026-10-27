@@ -68,25 +68,24 @@ signal atterrissage(force: float)
 @export var raideur_volant := 9.0  ## plus c'est petit, plus le volant met de temps à tourner
 @export var inertie_lacet := 7.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
 @export var facteur_rotation := 1.0  ## multiplie la vitesse de rotation (1 = comme avant)
-@export var sous_virage_max := 0.25  ## part de rotation perdue quand les pneus avant saturent
+@export var rigidite_haute_vitesse := 0.7  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
 
 @export_group("Dérapage (vrais circuits)")
-## Progressif : en virage rapide le bolide sous-vire d'abord (« saturation »), puis
-## l'arrière décroche. Une fois en dérapage, il reste planté : lâcher le volant garde
-## l'élan, garder les gaz le redresse tout seul, contre-braquer le redresse plus vite.
-@export var vitesse_min_derapage := 22.0  ## en dessous, impossible de déraper (m/s)
-@export var seuil_saturation := 0.45  ## braquage × vitesse au-dessus duquel les pneus saturent
-@export var vitesse_saturation := 4.0  ## rapidité de la montée de saturation (1.8 ≈ 1 s en virage serré à vitesse max)
+## Comme OutRun : on déclenche le dérapage en levant le pied ou en freinant en virage, à
+## grande vitesse seulement. Hors dérapage la direction est lourde ; en dérapage elle devient
+## légère : le bolide est « sur rail » et le volant règle la trajectoire.
+@export var vitesse_min_derapage := 22.0  ## en dessous, le dérapage s'arrête (m/s)
+@export var vitesse_entree_derapage := 69.0  ## m/s (250 km/h) : en dessous, impossible de déclencher un dérapage
 @export var angle_entree_lent := 0.35  ## radians : angle visé à l'entrée du dérapage, à basse vitesse
 @export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
 @export var bonus_feinte := 1.3  ## entrée plus ample si on a braqué à l'opposé juste avant (feinte)
-@export var delai_levee_pied := 0.45  ## secondes pendant lesquelles lever le pied compte comme « amorce »
+@export var delai_levee_pied := 0.6  ## secondes pendant lesquelles lever le pied compte comme « amorce »
 @export var angle_glisse_max := 1.0  ## radians : angle maximum
 @export var poussee_glisse := 1.1  ## rad/s : braquer dans le sens de la glisse l'augmente
 @export var rappel_glisse := 0.35  ## rad/s : contre-braquer réduit un peu l'angle (sans jamais sortir du dérapage)
 @export var angle_rail_min := 0.3  ## radians : angle plancher quand on contre-braque
 @export var acceleration_laterale := 42.0  ## m/s² : force de l'arc en dérapage (arc = ce chiffre ÷ vitesse)
-@export var effet_volant_rail := 0.5  ## de combien le volant resserre (+) ou élargit (−) l'arc : 0.5 = ±50 %
+@export var effet_volant_rail := 0.7  ## de combien le volant resserre (+) ou élargit (−) l'arc : 0.5 = ±50 %
 @export var redressement_gaz := 0.12  ## rad/s : sous les gaz, volant au neutre, la glisse se réduit
 @export var redressement_sans_gaz := 0.35  ## idem sans les gaz : lever le pied aide à redresser
 @export var angle_sortie := 0.12  ## radians : sous cet angle, on a retrouvé l'adhérence
@@ -128,7 +127,6 @@ var _sens_precedent := 0.0
 var _temps_depuis_changement := 9.0
 var _volant := 0.0  # braquage lissé (-1..1) : le volant a du poids
 var _lacet := 0.0  # vitesse de rotation actuelle du nez (inertie)
-var _saturation := 0.0  # 0 = pneus avant adhérents, 1 = l'arrière décroche
 var _temps := 0.0
 var _contact_mur := false
 var _normale_sol := Vector3.UP
@@ -319,7 +317,8 @@ func _conduire(delta: float) -> void:
 		else:
 			# Sous-virage : plus les pneus saturent, moins le nez suit le volant.
 			var cible := _volant * vitesse_rotation_circuit * facteur_rotation * maniabilite * controle
-			cible *= 1.0 - sous_virage_max * _saturation
+			# Direction lourde à grande vitesse : on ne tourne serré qu'en dérapant.
+			cible *= 1.0 - rigidite_haute_vitesse * smoothstep(0.35, 0.95, ratio_vitesse())
 			_lacet = lerpf(_lacet, cible, 1.0 - exp(-inertie_lacet * delta))
 			_cap += _lacet * delta
 			if absf(angle_difference(_cap_trajectoire, _cap)) > 0.25:
@@ -331,13 +330,11 @@ func _conduire(delta: float) -> void:
 	rotation.y = _cap
 
 
-## Décide si on est en dérapage. Les pneus saturent progressivement quand on
-## braque fort à haute vitesse (ou qu'on freine / lève le pied en virage) ; quand
-## la saturation atteint 1, l'arrière décroche. La touche « deraper » (frein à main)
-## fait décrocher tout de suite.
+## Décide si on est en dérapage. Comme dans OutRun, on l'amorce exprès : à grande
+## vitesse, on braque franchement tout en lâchant le gaz (ou en freinant, ou avec la
+## touche « deraper »). Braquer seul, sans amorce, ne fait jamais déraper.
 func _mettre_a_jour_derapage(delta: float) -> void:
 	var frein := Input.get_action_strength("freiner")
-	var demande := absf(_volant) * clampf(ratio_vitesse(), 0.0, 1.4)
 	if gaz > 0.5:
 		_temps_depuis_gaz = 0.0
 	else:
@@ -347,47 +344,28 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 		_sens_precedent = _sens_braquage
 		_sens_braquage = signf(_volant)
 		_temps_depuis_changement = 0.0
-	var volontaire := Input.is_action_pressed("deraper") and absf(_volant) > 0.3
 
 	if not is_on_floor() or vitesse < vitesse_min_derapage * 0.8:
 		en_derapage = false
-		_saturation = 0.0
 		return
-
 	if en_derapage:
-		_saturation = 1.0
 		return
 
-	var montee := maxf(demande - seuil_saturation, 0.0) * vitesse_saturation
-	if absf(_volant) > 0.3:
-		# Le transfert de masse charge l'avant : freiner ou lever le pied aide à décrocher.
-		if frein > 0.3:
-			montee += 0.7
-		elif gaz < 0.1 and vitesse > vitesse_min_derapage:
-			montee += 0.35
-	if montee > 0.0:
-		_saturation = minf(_saturation + montee * delta, 1.0)
-	else:
-		_saturation = maxf(_saturation - 1.5 * delta, 0.0)
-
-	# Amorce « OutRun » : on braque franchement tout en lâchant le gaz, en touchant
-	# le frein, ou avec la touche « deraper » : le bolide se met en travers tout de suite.
 	var levee := gaz < 0.1 and _temps_depuis_gaz < delai_levee_pied
-	var amorce := volontaire or frein > 0.3 or levee
-	if amorce and absf(_volant) > 0.35 and vitesse > vitesse_min_derapage * 1.3:
-		_saturation = 1.0
+	var amorce := Input.is_action_pressed("deraper") or frein > 0.3 or levee
+	if not (amorce and absf(_volant) > 0.35 and vitesse >= vitesse_entree_derapage):
+		return
 
-	if _saturation >= 1.0 and absf(_volant) > 0.2:
-		en_derapage = true
-		_sens_derapage = signf(_volant)
-		var angle := lerpf(angle_entree_lent, angle_entree_vite, clampf(ratio_vitesse(), 0.0, 1.0))
-		# Feinte : un coup de volant à l'opposé juste avant donne une entrée plus ample.
-		if _sens_precedent == -_sens_derapage and _temps_depuis_changement < 0.8:
-			angle = minf(angle * bonus_feinte, angle_glisse_max)
-		_angle_tenu = angle
-		_glisse = _sens_derapage * angle * 0.45
-		_temps_contre = 0.0
-		_lacet = 0.0
+	en_derapage = true
+	_sens_derapage = signf(_volant)
+	var angle := lerpf(angle_entree_lent, angle_entree_vite, clampf(ratio_vitesse(), 0.0, 1.0))
+	# Feinte : un coup de volant à l'opposé juste avant donne une entrée plus ample.
+	if _sens_precedent == -_sens_derapage and _temps_depuis_changement < 0.8:
+		angle = minf(angle * bonus_feinte, angle_glisse_max)
+	_angle_tenu = angle
+	_glisse = _sens_derapage * angle * 0.45
+	_temps_contre = 0.0
+	_lacet = 0.0
 
 
 ## Dérapage « sur rail » (comme OutRun) : le bolide glisse sur un arc régulier, le nez
@@ -436,7 +414,6 @@ func _piloter_derapage(volant: float, _manoeuvre: float, delta: float) -> void:
 
 	if angle < angle_sortie and relatif <= 0.1:
 		en_derapage = false
-		_saturation = 0.0
 		_lacet = 0.0
 
 
@@ -540,7 +517,6 @@ func _reapparaitre() -> void:
 	_cap = rotation.y
 	_cap_trajectoire = _cap
 	en_derapage = false
-	_saturation = 0.0
 	_volant = 0.0
 	_lacet = 0.0
 	velocity = Vector3.ZERO
@@ -641,7 +617,6 @@ func _recommencer() -> void:
 	_cap = rotation.y
 	_cap_trajectoire = _cap
 	en_derapage = false
-	_saturation = 0.0
 	_volant = 0.0
 	_lacet = 0.0
 	velocity = Vector3.ZERO
