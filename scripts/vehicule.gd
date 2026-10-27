@@ -40,10 +40,12 @@ signal atterrissage(force: float)
 @export var consommation := 22.0  ## par seconde de boost
 @export var recharge := 10.0  ## par seconde sans boost
 @export var attaque_distorsion := 8.0  ## vitesse à laquelle l'effet de boost s'installe
-@export var relachement_distorsion := 2.5  ## vitesse à laquelle il s'efface après le boost
+@export var relachement_distorsion := 5.0  ## vitesse à laquelle il s'efface après le boost
 ## Secondes pour que le boost donne toute sa poussée : il démarre doucement,
 ## puis pousse de plus en plus fort (une courbe qui se creuse, pas un coup sec).
 @export var duree_montee_boost := 2.5
+## Après le boost, vitesse perdue par seconde pour revenir à la vitesse max (plus c'est grand, plus le boost s'arrête net).
+@export var freinage_apres_boost := 48.0
 
 @export_group("Apparence")
 ## Matière (toon) appliquée au modèle 3D. Les couleurs viennent des couleurs de sommets du modèle.
@@ -119,6 +121,7 @@ var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à
 var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
 var _angle_tenu := 0.0  # angle de glisse visé (sans lissage)
+var _ignorer_boost := false  # vrai après une perte de focus, jusqu'au relâchement de la touche
 var _t_derapage := 0.0  # temps écoulé depuis le début du dérapage
 var _amorce := 0.0  # temps restant pendant lequel l'amorce du dérapage est armée
 var _gaz_precedent := 0.0
@@ -237,6 +240,11 @@ func _roues_arriere_pivots() -> Array[Node3D]:
 	return pivots
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_ignorer_boost = true
+
+
 func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("recommencer"):
 		_recommencer()
@@ -276,7 +284,11 @@ func _conduire(delta: float) -> void:
 	var frein := Input.get_action_strength("freiner")
 	var virage := Input.get_axis("droite", "gauche")
 
-	en_boost = Input.is_action_pressed("boost") and jauge_boost > 0.0
+	# Sécurité : si la fenêtre perd le focus pendant qu'on tient la touche, le jeu peut rater
+	# son relâchement. On ignore alors le boost jusqu'à ce qu'on lâche vraiment la touche.
+	if _ignorer_boost and not Input.is_action_pressed("boost"):
+		_ignorer_boost = false
+	en_boost = Input.is_action_pressed("boost") and not _ignorer_boost and jauge_boost > 0.0
 
 	if en_boost:
 		jauge_boost = maxf(jauge_boost - consommation * delta, 0.0)
@@ -290,7 +302,7 @@ func _conduire(delta: float) -> void:
 		jauge_boost = minf(jauge_boost + recharge * delta, jauge_max)
 		if vitesse > vitesse_max:
 			# Après un boost, on redescend doucement : la vitesse « reste » un peu.
-			vitesse = move_toward(vitesse, vitesse_max, frottement * 3.0 * delta)
+			vitesse = move_toward(vitesse, vitesse_max, freinage_apres_boost * delta)
 		elif gaz > 0.0:
 			vitesse = move_toward(vitesse, vitesse_max * gaz, acceleration * delta)
 		else:
