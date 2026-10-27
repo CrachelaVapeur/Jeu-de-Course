@@ -65,19 +65,24 @@ signal atterrissage(force: float)
 @export var perte_choc := 0.75  ## part de la vitesse perdue en percutant un bloc de face
 
 @export_group("Dérapage (vrais circuits)")
-## Touche « deraper » maintenue + virage = le bolide pivote plus fort mais sa
-## trajectoire le suit avec retard : il glisse de côté.
-@export var vitesse_min_derapage := 22.0  ## en dessous, impossible de déraper
-@export var bonus_rotation_derapage := 1.45  ## le nez tourne plus vite pendant le dérapage
-@export var angle_glisse_max := 0.75  ## radians (~43°) entre le nez et la trajectoire
-@export var adherence_derapage := 1.7  ## vitesse à laquelle la trajectoire rattrape le nez, en dérapage
-@export var adherence_normale := 9.0  ## idem hors dérapage : on se « raccroche » vite
-@export var perte_vitesse_derapage := 0.35  ## part de vitesse perdue par seconde à glisse maximale
+## Le dérapage fonctionne comme un rail : une fois lancé, le bolide garde un angle
+## de glisse stable et décrit un arc. De petits coups de volant règlent l'angle ;
+## un braquage franc dans l'autre sens enchaîne directement sur un dérapage inverse.
+@export var vitesse_min_derapage := 22.0  ## en dessous, impossible de déraper (m/s)
+@export var vitesse_derapage_auto := 40.0  ## m/s (144 km/h) : au-delà, un braquage franc fait décrocher
+@export var braquage_derapage_auto := 0.7  ## part du braquage (0 à 1) qui déclenche le décrochage
+@export var delai_derapage_auto := 0.12  ## secondes de braquage franc avant de décrocher
+@export var angle_glisse_repos := 0.45  ## radians : angle tenu sans toucher au volant (~26°)
+@export var angle_glisse_max := 0.75  ## radians : angle max en braquant dans le sens de la glisse
+@export var angle_glisse_min := 0.2  ## radians : angle mini en contre-braquant doucement
+@export var reactivite_glisse := 7.0  ## vitesse à laquelle l'angle rejoint sa cible
+@export var gain_arc_derapage := 2.6  ## plus c'est grand, plus l'arc est serré pour un même angle
+@export var seuil_contre_braquage := 0.6  ## braquage inverse qui enchaîne sur l'autre côté
+@export var delai_contre_braquage := 0.08  ## secondes à tenir ce braquage inverse
+@export var delai_sortie_derapage := 0.35  ## secondes volant au neutre avant de reprendre l'adhérence
+@export var adherence_normale := 9.0  ## hors dérapage la trajectoire rattrape vite le nez
+@export var perte_vitesse_derapage := 0.25  ## part de vitesse perdue par seconde à glisse maximale
 @export var recharge_boost_derapage := 14.0  ## jauge gagnée par seconde de dérapage
-@export var vitesse_derapage_auto := 50.0  ## m/s (180 km/h) : au-delà, un braquage franc fait décrocher l'arrière
-@export var braquage_derapage_auto := 0.8  ## part du braquage (0 à 1) qui déclenche le décrochage
-@export var delai_derapage_auto := 0.25  ## secondes de braquage franc avant de décrocher
-@export var adherence_sans_gaz := 0.6  ## en dérapage, lever le pied lâche l'arrière (×)
 
 var vitesse := 0.0
 var en_derapage := false
@@ -100,7 +105,11 @@ const BRAQUAGE_MAX := 0.45  # radians, roues avant
 var _cap := 0.0  # angle du bolide autour de l'axe vertical (là où pointe le nez)
 var _cap_trajectoire := 0.0  # direction dans laquelle on se déplace vraiment
 var _charge_derapage := 0.0  # temps passé à braquer fort à haute vitesse
-var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours
+var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à gauche)
+var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
+var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
+var _temps_contre := 0.0  # temps passé à braquer à l'opposé de la glisse
+var _temps_neutre := 0.0  # temps passé volant au neutre pendant un dérapage
 var _temps := 0.0
 var _contact_mur := false
 var _normale_sol := Vector3.UP
@@ -149,6 +158,66 @@ func _ready() -> void:
 	for nom in ["RoueArG", "RoueArD"]:
 		var pivot := $Carrosserie/Modele.find_child(nom, true, false) as Node3D
 		_roues_arriere.append(pivot.get_child(0) as Node3D)
+	_creer_fumees()
+
+
+## Nuages de fumée aux deux roues arrière, actifs pendant un dérapage.
+## Ils restent dans le monde (ils ne suivent pas le bolide) : ça dessine une traînée.
+func _creer_fumees() -> void:
+	var matiere := StandardMaterial3D.new()
+	matiere.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	matiere.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	matiere.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	matiere.vertex_color_use_as_albedo = true
+	matiere.albedo_color = Color.WHITE
+	matiere.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	# Petite texture ronde de 16×16 pixels, nette (look PS1) : un rond en pixels, pas un carré.
+	var rond := Gradient.new()
+	rond.colors = PackedColorArray([Color.WHITE, Color.WHITE, Color(1, 1, 1, 0)])
+	rond.offsets = PackedFloat32Array([0.0, 0.55, 0.95])
+	var texture_ronde := GradientTexture2D.new()
+	texture_ronde.gradient = rond
+	texture_ronde.fill = GradientTexture2D.FILL_RADIAL
+	texture_ronde.fill_from = Vector2(0.5, 0.5)
+	texture_ronde.fill_to = Vector2(1.0, 0.5)
+	texture_ronde.width = 16
+	texture_ronde.height = 16
+	matiere.albedo_texture = texture_ronde
+	var maillage := QuadMesh.new()
+	maillage.size = Vector2.ONE
+	maillage.material = matiere
+	var degrade := Gradient.new()
+	degrade.colors = PackedColorArray([Color(0.95, 0.95, 1.0, 0.0), Color(0.9, 0.92, 1.0, 0.75), Color(0.7, 0.72, 0.85, 0.0)])
+	degrade.offsets = PackedFloat32Array([0.0, 0.15, 1.0])
+	var croissance := Curve.new()
+	croissance.add_point(Vector2(0.0, 0.4))
+	croissance.add_point(Vector2(1.0, 1.0))
+	for pivot in _roues_arriere_pivots():
+		var nuage := CPUParticles3D.new()
+		nuage.local_coords = false
+		nuage.emitting = false
+		nuage.amount = 56
+		nuage.lifetime = 0.9
+		nuage.mesh = maillage
+		nuage.direction = Vector3(0.0, 1.0, 0.0)
+		nuage.spread = 35.0
+		nuage.initial_velocity_min = 0.6
+		nuage.initial_velocity_max = 2.2
+		nuage.gravity = Vector3(0.0, 0.4, 0.0)
+		nuage.scale_amount_min = 1.4
+		nuage.scale_amount_max = 2.6
+		nuage.scale_amount_curve = croissance
+		nuage.color_ramp = degrade
+		nuage.position = to_local(pivot.global_position) * Vector3(1.0, 0.0, 1.0) + Vector3(0.0, 0.15, 0.0)
+		add_child(nuage)
+		_fumees.append(nuage)
+
+
+func _roues_arriere_pivots() -> Array[Node3D]:
+	var pivots: Array[Node3D] = []
+	for nom in ["RoueArG", "RoueArD"]:
+		pivots.append($Carrosserie/Modele.find_child(nom, true, false) as Node3D)
+	return pivots
 
 
 func _physics_process(delta: float) -> void:
@@ -165,6 +234,8 @@ func _physics_process(delta: float) -> void:
 		_avancer_sur_le_relief(delta)
 		_surveiller_chute(delta)
 	_animer(delta)
+	for nuage in _fumees:
+		nuage.emitting = en_derapage and is_on_floor()
 
 
 ## Combien on va vite par rapport à la vitesse max normale (1.0 = vitesse max,
@@ -217,39 +288,25 @@ func _conduire(delta: float) -> void:
 	else:
 		var controle := 1.0 if is_on_floor() else controle_en_l_air
 		_mettre_a_jour_derapage(virage, delta)
-		var bonus := bonus_rotation_derapage if en_derapage else 1.0
 		if en_derapage:
-			# Plus on est de travers, plus il est dur de pousser le nez encore plus loin
-			# (les pneus saturent) ; contre-braquer, lui, reste facile.
-			var glisse_signee := angle_difference(_cap_trajectoire, _cap)
-			if signf(virage) == signf(glisse_signee):
-				var saturation := smoothstep(angle_glisse_max * 0.6, angle_glisse_max, absf(glisse_signee))
-				bonus *= 1.0 - 0.7 * saturation
-		_cap += virage * vitesse_rotation_circuit * maniabilite * controle * bonus * delta
-		# La trajectoire rattrape le nez : vite quand on a de l'adhérence, lentement en dérapage.
-		var raccroche := adherence_derapage if en_derapage else adherence_normale
-		if en_derapage and gaz < 0.1:
-			raccroche *= adherence_sans_gaz
-		_cap_trajectoire = lerp_angle(_cap_trajectoire, _cap, 1.0 - exp(-raccroche * delta))
-		var glisse := angle_difference(_cap_trajectoire, _cap)
-		if absf(glisse) > angle_glisse_max:
-			_cap_trajectoire = _cap - signf(glisse) * angle_glisse_max
-			glisse = signf(glisse) * angle_glisse_max
-		if en_derapage:
-			vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * absf(glisse) / angle_glisse_max * delta, 0.0)
-			jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
+			_piloter_derapage(virage, maniabilite * controle, delta)
+		else:
+			_cap += virage * vitesse_rotation_circuit * maniabilite * controle * delta
+			if absf(angle_difference(_cap_trajectoire, _cap)) > 0.25:
+				# Fin de dérapage : le nez revient vers la trajectoire, sans à-coup sur la direction.
+				_cap = lerp_angle(_cap, _cap_trajectoire, 1.0 - exp(-6.0 * delta))
+			else:
+				# L'adhérence ramène vite la trajectoire dans l'axe du nez.
+				_cap_trajectoire = lerp_angle(_cap_trajectoire, _cap, 1.0 - exp(-adherence_normale * delta))
 	rotation.y = _cap
 
 
 ## Décide si on est en dérapage. Trois façons d'y entrer :
-## - naturelle : très vite + braquage franc maintenu un instant (le bolide décroche) ;
+## - naturelle : vite + braquage franc maintenu un instant (le bolide décroche) ;
 ## - au freinage : on freine fort en virage ;
-## - volontaire : touche « deraper » + virage (frein à main, plus facile à lancer).
-## On en sort quand la glisse devient faible et qu'on ne force plus le virage :
-## contre-braquer (tourner à l'opposé) ramène le nez dans l'axe de la trajectoire.
+## - volontaire : touche « deraper » + virage (frein à main).
+## On en sort quand le volant reste au neutre un moment, ou si on ralentit trop.
 func _mettre_a_jour_derapage(virage: float, delta: float) -> void:
-	var au_sol := is_on_floor()
-	var glisse := absf(angle_difference(_cap_trajectoire, _cap))
 	var frein := Input.get_action_strength("freiner")
 	var volontaire := Input.is_action_pressed("deraper") and absf(virage) > 0.3 and vitesse > vitesse_min_derapage
 	var braquage_franc := absf(virage) > braquage_derapage_auto and vitesse > vitesse_derapage_auto
@@ -260,22 +317,62 @@ func _mettre_a_jour_derapage(virage: float, delta: float) -> void:
 	else:
 		_charge_derapage = maxf(_charge_derapage - delta * 2.0, 0.0)
 
-	if not au_sol or vitesse < vitesse_min_derapage * 0.8:
+	if not is_on_floor() or vitesse < vitesse_min_derapage * 0.8:
 		en_derapage = false
-		_charge_derapage = 0.0
+		_temps_neutre = 0.0
 		return
 
 	if not en_derapage:
 		if volontaire or _charge_derapage > delai_derapage_auto:
 			en_derapage = true
 			_sens_derapage = signf(virage)
-			# Petit « coup de volant » initial : le nez part déjà un peu de côté.
-			_cap += virage * 0.12
+			_glisse = angle_difference(_cap_trajectoire, _cap)
+			_temps_contre = 0.0
+			_temps_neutre = 0.0
 	else:
-		var force_le_virage := volontaire or braquage_franc or freinage_virage
-		if glisse < 0.1 and not force_le_virage:
-			en_derapage = false
-			_charge_derapage = 0.0
+		if absf(virage) < 0.15:
+			_temps_neutre += delta
+			if _temps_neutre > delai_sortie_derapage:
+				en_derapage = false
+				_charge_derapage = 0.0
+		else:
+			_temps_neutre = 0.0
+
+
+## Dérapage « sur rail » : l'angle de glisse suit une cible réglée par le volant,
+## et la trajectoire tourne tout seule du côté de la glisse.
+## - volant au neutre : angle de repos, stable ;
+## - volant dans le sens de la glisse : l'angle augmente (arc plus serré) ;
+## - volant à l'opposé, doucement : l'angle diminue (arc plus large) ;
+## - volant à l'opposé, franchement : on bascule sur l'autre côté (enchaînement).
+func _piloter_derapage(virage: float, manoeuvre: float, delta: float) -> void:
+	var relatif := virage * _sens_derapage  # + = dans le sens de la glisse, - = contre
+	if relatif < -seuil_contre_braquage:
+		_temps_contre += delta
+		if _temps_contre > delai_contre_braquage:
+			_sens_derapage = -_sens_derapage
+			_temps_contre = 0.0
+			relatif = -relatif
+	else:
+		_temps_contre = 0.0
+
+	var cible: float
+	if relatif >= 0.0:
+		cible = lerpf(angle_glisse_repos, angle_glisse_max, relatif)
+	else:
+		cible = lerpf(angle_glisse_repos, angle_glisse_min, minf(-relatif / seuil_contre_braquage, 1.0))
+	if gaz < 0.1:
+		cible = minf(cible * 1.25, angle_glisse_max)  # lever le pied : l'arrière part un peu plus
+
+	_glisse = lerpf(_glisse, _sens_derapage * cible, 1.0 - exp(-reactivite_glisse * delta))
+	# La trajectoire tourne du côté où pointe le nez, d'autant plus que l'angle est grand.
+	var arc := _glisse * gain_arc_derapage * manoeuvre * delta
+	_cap_trajectoire += arc
+	_cap = _cap_trajectoire + _glisse
+
+	var gravite_glisse := absf(_glisse) / angle_glisse_max
+	vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * gravite_glisse * delta, 0.0)
+	jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
 
 
 func _avancer_tout_droit(delta: float) -> void:
