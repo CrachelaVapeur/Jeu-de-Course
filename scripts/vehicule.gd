@@ -64,24 +64,32 @@ signal atterrissage(force: float)
 @export var hauteur_chute := -30.0  ## en dessous de cette altitude, on réapparaît
 @export var perte_choc := 0.75  ## part de la vitesse perdue en percutant un bloc de face
 
+@export_group("Poids et direction (vrais circuits)")
+@export var raideur_volant := 4.5  ## plus c'est petit, plus le volant met de temps à tourner
+@export var inertie_lacet := 3.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
+@export var facteur_rotation := 0.8  ## multiplie la vitesse de rotation (1 = comme avant)
+@export var sous_virage_max := 0.4  ## part de rotation perdue quand les pneus avant saturent
+
 @export_group("Dérapage (vrais circuits)")
-## Le dérapage fonctionne comme un rail : une fois lancé, le bolide garde un angle
-## de glisse stable et décrit un arc. De petits coups de volant règlent l'angle ;
-## un braquage franc dans l'autre sens enchaîne directement sur un dérapage inverse.
+## Progressif : en virage rapide le bolide sous-vire d'abord (« saturation »), puis
+## l'arrière décroche. Une fois en dérapage, il reste planté : lâcher le volant garde
+## l'élan, garder les gaz le redresse tout seul, contre-braquer le redresse plus vite.
 @export var vitesse_min_derapage := 22.0  ## en dessous, impossible de déraper (m/s)
-@export var vitesse_derapage_auto := 40.0  ## m/s (144 km/h) : au-delà, un braquage franc fait décrocher
-@export var braquage_derapage_auto := 0.7  ## part du braquage (0 à 1) qui déclenche le décrochage
-@export var delai_derapage_auto := 0.12  ## secondes de braquage franc avant de décrocher
-@export var angle_glisse_repos := 0.45  ## radians : angle tenu sans toucher au volant (~26°)
-@export var angle_glisse_max := 0.75  ## radians : angle max en braquant dans le sens de la glisse
-@export var angle_glisse_min := 0.2  ## radians : angle mini en contre-braquant doucement
-@export var reactivite_glisse := 7.0  ## vitesse à laquelle l'angle rejoint sa cible
+@export var seuil_saturation := 0.55  ## braquage × vitesse au-dessus duquel les pneus saturent
+@export var vitesse_saturation := 1.8  ## rapidité de la montée de saturation (1.8 ≈ 1 s en virage serré à vitesse max)
+@export var angle_entree_derapage := 0.28  ## radians : angle de glisse au décrochage
+@export var angle_glisse_max := 0.75  ## radians : angle maximum
+@export var poussee_glisse := 0.6  ## rad/s : braquer dans le sens de la glisse l'augmente
+@export var rappel_glisse := 1.7  ## rad/s : contre-braquer la réduit
+@export var redressement_gaz := 0.32  ## rad/s : sous les gaz, volant au neutre, la glisse se réduit
+@export var redressement_sans_gaz := 0.04  ## idem sans les gaz : l'élan se conserve
+@export var angle_sortie := 0.12  ## radians : sous cet angle, on a retrouvé l'adhérence
+@export var reactivite_glisse := 5.0  ## lissage de l'angle de glisse
 @export var gain_arc_derapage := 2.6  ## plus c'est grand, plus l'arc est serré pour un même angle
 @export var seuil_contre_braquage := 0.6  ## braquage inverse qui enchaîne sur l'autre côté
-@export var delai_contre_braquage := 0.08  ## secondes à tenir ce braquage inverse
-@export var delai_sortie_derapage := 0.35  ## secondes volant au neutre avant de reprendre l'adhérence
+@export var delai_contre_braquage := 0.1  ## secondes à tenir ce braquage inverse
 @export var adherence_normale := 9.0  ## hors dérapage la trajectoire rattrape vite le nez
-@export var perte_vitesse_derapage := 0.25  ## part de vitesse perdue par seconde à glisse maximale
+@export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 @export var recharge_boost_derapage := 14.0  ## jauge gagnée par seconde de dérapage
 
 var vitesse := 0.0
@@ -104,12 +112,14 @@ const BRAQUAGE_MAX := 0.45  # radians, roues avant
 
 var _cap := 0.0  # angle du bolide autour de l'axe vertical (là où pointe le nez)
 var _cap_trajectoire := 0.0  # direction dans laquelle on se déplace vraiment
-var _charge_derapage := 0.0  # temps passé à braquer fort à haute vitesse
 var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à gauche)
 var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
 var _temps_contre := 0.0  # temps passé à braquer à l'opposé de la glisse
-var _temps_neutre := 0.0  # temps passé volant au neutre pendant un dérapage
+var _angle_tenu := 0.0  # angle de glisse visé (sans lissage)
+var _volant := 0.0  # braquage lissé (-1..1) : le volant a du poids
+var _lacet := 0.0  # vitesse de rotation actuelle du nez (inertie)
+var _saturation := 0.0  # 0 = pneus avant adhérents, 1 = l'arrière décroche
 var _temps := 0.0
 var _contact_mur := false
 var _normale_sol := Vector3.UP
@@ -287,11 +297,16 @@ func _conduire(delta: float) -> void:
 			_cap = move_toward(_cap, 0.0, redressement * delta)
 	else:
 		var controle := 1.0 if is_on_floor() else controle_en_l_air
-		_mettre_a_jour_derapage(virage, delta)
+		_volant = lerpf(_volant, virage, 1.0 - exp(-raideur_volant * delta))
+		_mettre_a_jour_derapage(delta)
 		if en_derapage:
-			_piloter_derapage(virage, maniabilite * controle, delta)
+			_piloter_derapage(_volant, maniabilite * controle, delta)
 		else:
-			_cap += virage * vitesse_rotation_circuit * maniabilite * controle * delta
+			# Sous-virage : plus les pneus saturent, moins le nez suit le volant.
+			var cible := _volant * vitesse_rotation_circuit * facteur_rotation * maniabilite * controle
+			cible *= 1.0 - sous_virage_max * _saturation
+			_lacet = lerpf(_lacet, cible, 1.0 - exp(-inertie_lacet * delta))
+			_cap += _lacet * delta
 			if absf(angle_difference(_cap_trajectoire, _cap)) > 0.25:
 				# Fin de dérapage : le nez revient vers la trajectoire, sans à-coup sur la direction.
 				_cap = lerp_angle(_cap, _cap_trajectoire, 1.0 - exp(-6.0 * delta))
@@ -301,78 +316,91 @@ func _conduire(delta: float) -> void:
 	rotation.y = _cap
 
 
-## Décide si on est en dérapage. Trois façons d'y entrer :
-## - naturelle : vite + braquage franc maintenu un instant (le bolide décroche) ;
-## - au freinage : on freine fort en virage ;
-## - volontaire : touche « deraper » + virage (frein à main).
-## On en sort quand le volant reste au neutre un moment, ou si on ralentit trop.
-func _mettre_a_jour_derapage(virage: float, delta: float) -> void:
+## Décide si on est en dérapage. Les pneus saturent progressivement quand on
+## braque fort à haute vitesse (ou qu'on freine / lève le pied en virage) ; quand
+## la saturation atteint 1, l'arrière décroche. La touche « deraper » (frein à main)
+## fait décrocher tout de suite.
+func _mettre_a_jour_derapage(delta: float) -> void:
 	var frein := Input.get_action_strength("freiner")
-	var volontaire := Input.is_action_pressed("deraper") and absf(virage) > 0.3 and vitesse > vitesse_min_derapage
-	var braquage_franc := absf(virage) > braquage_derapage_auto and vitesse > vitesse_derapage_auto
-	var freinage_virage := frein > 0.3 and absf(virage) > 0.3 and vitesse > vitesse_derapage_auto * 0.7
-
-	if braquage_franc or freinage_virage:
-		_charge_derapage += delta
-	else:
-		_charge_derapage = maxf(_charge_derapage - delta * 2.0, 0.0)
+	var demande := absf(_volant) * clampf(ratio_vitesse(), 0.0, 1.4)
+	var volontaire := Input.is_action_pressed("deraper") and absf(_volant) > 0.3
 
 	if not is_on_floor() or vitesse < vitesse_min_derapage * 0.8:
 		en_derapage = false
-		_temps_neutre = 0.0
+		_saturation = 0.0
 		return
 
-	if not en_derapage:
-		if volontaire or _charge_derapage > delai_derapage_auto:
-			en_derapage = true
-			_sens_derapage = signf(virage)
-			_glisse = angle_difference(_cap_trajectoire, _cap)
-			_temps_contre = 0.0
-			_temps_neutre = 0.0
+	if en_derapage:
+		_saturation = 1.0
+		return
+
+	var montee := maxf(demande - seuil_saturation, 0.0) * vitesse_saturation
+	if absf(_volant) > 0.3:
+		# Le transfert de masse charge l'avant : freiner ou lever le pied aide à décrocher.
+		if frein > 0.3:
+			montee += 0.7
+		elif gaz < 0.1 and vitesse > vitesse_min_derapage:
+			montee += 0.35
+	if montee > 0.0:
+		_saturation = minf(_saturation + montee * delta, 1.0)
 	else:
-		if absf(virage) < 0.15:
-			_temps_neutre += delta
-			if _temps_neutre > delai_sortie_derapage:
-				en_derapage = false
-				_charge_derapage = 0.0
-		else:
-			_temps_neutre = 0.0
+		_saturation = maxf(_saturation - 1.5 * delta, 0.0)
+
+	if volontaire and vitesse > vitesse_min_derapage:
+		_saturation = 1.0
+	if _saturation >= 1.0 and absf(_volant) > 0.2:
+		en_derapage = true
+		_sens_derapage = signf(_volant)
+		_glisse = clampf(angle_difference(_cap_trajectoire, _cap), -angle_entree_derapage, angle_entree_derapage)
+		if absf(_glisse) < angle_entree_derapage * 0.5:
+			_glisse = _sens_derapage * angle_entree_derapage * 0.5
+		_angle_tenu = absf(_glisse)
+		_temps_contre = 0.0
+		_lacet = 0.0
 
 
-## Dérapage « sur rail » : l'angle de glisse suit une cible réglée par le volant,
-## et la trajectoire tourne tout seule du côté de la glisse.
-## - volant au neutre : angle de repos, stable ;
-## - volant dans le sens de la glisse : l'angle augmente (arc plus serré) ;
-## - volant à l'opposé, doucement : l'angle diminue (arc plus large) ;
-## - volant à l'opposé, franchement : on bascule sur l'autre côté (enchaînement).
-func _piloter_derapage(virage: float, manoeuvre: float, delta: float) -> void:
-	var relatif := virage * _sens_derapage  # + = dans le sens de la glisse, - = contre
+## Dérapage « sur rail » : le bolide est planté, l'angle de glisse évolue doucement.
+## - braquer dans le sens de la glisse : l'angle augmente (arc plus serré) ;
+## - volant au neutre : l'élan se garde ; sous les gaz, l'angle diminue tout seul ;
+## - contre-braquer : l'angle diminue plus vite ; franchement, on bascule de l'autre côté.
+func _piloter_derapage(volant: float, manoeuvre: float, delta: float) -> void:
+	var relatif := volant * _sens_derapage  # + = dans le sens de la glisse, - = contre
 	if relatif < -seuil_contre_braquage:
 		_temps_contre += delta
 		if _temps_contre > delai_contre_braquage:
 			_sens_derapage = -_sens_derapage
 			_temps_contre = 0.0
 			relatif = -relatif
+			_glisse = -_glisse * 0.5
 	else:
 		_temps_contre = 0.0
 
-	var cible: float
-	if relatif >= 0.0:
-		cible = lerpf(angle_glisse_repos, angle_glisse_max, relatif)
+	var angle := _angle_tenu
+	if relatif > 0.1:
+		# Plus on braque, plus l'angle visé est grand ; braquer à moitié ne pousse qu'à moitié.
+		var angle_vise := lerpf(angle_entree_derapage, angle_glisse_max, clampf(relatif, 0.0, 1.0))
+		if angle < angle_vise:
+			angle = minf(angle + relatif * poussee_glisse * delta, angle_vise)
+	elif relatif < -0.1:
+		angle -= -relatif * rappel_glisse * delta
 	else:
-		cible = lerpf(angle_glisse_repos, angle_glisse_min, minf(-relatif / seuil_contre_braquage, 1.0))
-	if gaz < 0.1:
-		cible = minf(cible * 1.25, angle_glisse_max)  # lever le pied : l'arrière part un peu plus
+		angle -= (redressement_gaz * clampf(gaz, 0.0, 1.0) + redressement_sans_gaz) * delta
+	if Input.get_action_strength("freiner") > 0.3:
+		angle += 0.2 * delta  # freiner en dérapage déstabilise l'arrière
+	angle = clampf(angle, 0.0, angle_glisse_max)
+	_angle_tenu = angle
 
-	_glisse = lerpf(_glisse, _sens_derapage * cible, 1.0 - exp(-reactivite_glisse * delta))
-	# La trajectoire tourne du côté où pointe le nez, d'autant plus que l'angle est grand.
-	var arc := _glisse * gain_arc_derapage * manoeuvre * delta
-	_cap_trajectoire += arc
+	_glisse = lerpf(_glisse, _sens_derapage * angle, 1.0 - exp(-reactivite_glisse * delta))
+	_cap_trajectoire += _glisse * gain_arc_derapage * manoeuvre * delta
 	_cap = _cap_trajectoire + _glisse
 
-	var gravite_glisse := absf(_glisse) / angle_glisse_max
-	vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * gravite_glisse * delta, 0.0)
+	vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * absf(_glisse) / angle_glisse_max * delta, 0.0)
 	jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
+
+	if angle < angle_sortie and relatif <= 0.1:
+		en_derapage = false
+		_saturation = 0.0
+		_lacet = 0.0
 
 
 func _avancer_tout_droit(delta: float) -> void:
@@ -475,6 +503,9 @@ func _reapparaitre() -> void:
 	_cap = rotation.y
 	_cap_trajectoire = _cap
 	en_derapage = false
+	_saturation = 0.0
+	_volant = 0.0
+	_lacet = 0.0
 	velocity = Vector3.ZERO
 	vitesse = vitesse_max * 0.4
 	teleporte.emit(global_position - ancienne)
@@ -573,6 +604,9 @@ func _recommencer() -> void:
 	_cap = rotation.y
 	_cap_trajectoire = _cap
 	en_derapage = false
+	_saturation = 0.0
+	_volant = 0.0
+	_lacet = 0.0
 	velocity = Vector3.ZERO
 	vitesse = 0.0
 	jauge_boost = jauge_max
