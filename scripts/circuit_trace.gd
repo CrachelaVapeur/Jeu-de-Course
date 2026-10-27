@@ -19,14 +19,11 @@ extends DecorBase
 
 const SHADER_ROUTE := preload("res://shaders/route_circuit.gdshader")
 const SHADER_EAU := preload("res://shaders/eau.gdshader")
-const HAUTEUR_TUNNEL := 9.0
+const HAUTEUR_TUNNEL := 14.0
 
 const COULEURS_BATIMENTS: Array[Color] = [
 	Color(0.55, 0.28, 0.18), Color(0.42, 0.36, 0.32), Color(0.30, 0.40, 0.42),
 	Color(0.62, 0.48, 0.30), Color(0.35, 0.25, 0.35), Color(0.48, 0.20, 0.15),
-]
-const COULEURS_NEONS: Array[Color] = [
-	Color(0.2, 0.9, 1.0), Color(1.0, 0.2, 0.6), Color(1.0, 0.7, 0.1), Color(0.6, 0.3, 1.0),
 ]
 
 var courbe := Curve3D.new()
@@ -70,12 +67,12 @@ func _ready() -> void:
 	_construire_murets()
 	_construire_obstacles()
 	_construire_piliers()
-	_construire_portique(ligne_depart, Color(0.2, 0.9, 1.0))
+	_construire_portique(ligne_depart, couleur_zone(ligne_depart))
 	if not _donnees.BOUCLE:
-		_construire_portique(ligne_arrivee, Color(1.0, 0.2, 0.6))
+		_construire_portique(ligne_arrivee, couleur_zone(ligne_arrivee))
 		# Un mur au bout de la route.
 		var fin := _cadre(longueur - 2.0)
-		_construire_bloc({"a": longueur - 2.0, "decalage": 0, "taille": [fin.largeur + 1.2, 4, 2]}, _matiere(Color(0.3, 0.28, 0.3)), _matiere(Color(1.0, 0.2, 0.6), 4.0))
+		_construire_bloc({"a": longueur - 2.0, "decalage": 0, "taille": [fin.largeur + 1.2, 4, 2]}, _matiere(Color(0.3, 0.28, 0.3)), _matiere(couleur_zone(longueur), 2.0))
 	if terrain != null:
 		_construire_terrain()
 		var villes: Array = _constante("VILLES", [])
@@ -102,6 +99,20 @@ func _physics_process(delta: float) -> void:
 	var d := distance_sur_circuit(vehicule.global_position)
 	if vehicule.global_position.y < _echantillon(d).y - 15.0:
 		vehicule.reapparaitre()
+	elif _sous_la_route(d):
+		# Passé sous le sol après un choc : on ne peut plus en sortir tout
+		# seul, on le remet sur la route.
+		vehicule.reapparaitre()
+
+
+## Vrai si le bolide est sous la surface de la route, dans sa largeur
+## (sauf au-dessus d'un trou, où il a le droit de tomber).
+func _sous_la_route(d: float) -> bool:
+	if _obstacle_a("trou", d) or _obstacle_a("trou", d + 10.0):
+		return false
+	var t := _cadre(d)
+	var ecart: Vector3 = vehicule.global_position - t.pos
+	return absf(ecart.dot(t.droite)) < t.largeur * 0.5 - 1.0 and ecart.dot(t.haut) < -1.2
 
 
 # --- Tracé --------------------------------------------------------------------
@@ -224,6 +235,16 @@ func _obstacle_a(type: String, d: float, cote := "") -> bool:
 	return false
 
 
+## La teinte des lumières à cet endroit (voir COULEURS_ZONES dans le fichier
+## du circuit). Une seule couleur par zone, pour une ambiance cohérente.
+func couleur_zone(d: float) -> Color:
+	var couleur := Color(0.35, 0.85, 1.0)
+	for z in _constante("COULEURS_ZONES", []):
+		if d >= z.a:
+			couleur = z.couleur
+	return couleur
+
+
 func _bord(t: Dictionary, cote: float) -> Vector3:
 	return t.pos + t.droite * (t.largeur * 0.5 * cote)
 
@@ -253,6 +274,7 @@ func _construire_route() -> void:
 		else:
 			# UV2.y = 2 : le shader allume les pointillés (lignes lumineuses).
 			var mode := 2.0 if _obstacle_a("lignes_lumineuses", milieu) else 0.0
+			dessus.set_color(couleur_zone(milieu).srgb_to_linear())
 			_quad(dessus, [al, ar, br, bl], a.haut,
 				[Vector2(-uv_a, a.d), Vector2(uv_a, a.d), Vector2(uv_b, b.d), Vector2(-uv_b, b.d)],
 				[Vector2(uv_a, mode), Vector2(uv_a, mode), Vector2(uv_b, mode), Vector2(uv_b, mode)])
@@ -349,11 +371,11 @@ func _construire_murets() -> void:
 			var lb: Vector3 = ib + hb * 1.02 + ob * 0.25
 			var ra: Vector3 = ia + ha * 1.02 + oa * 0.75
 			var rb: Vector3 = ib + hb * 1.02 + ob * 0.75
-			neons.set_color(COULEURS_NEONS[0] if cote < 0.0 else COULEURS_NEONS[1])
+			neons.set_color(couleur_zone(milieu).srgb_to_linear())
 			_quad(neons, [la, ra, rb, lb], a.haut)
 
 	_ajouter_solide(murets, _matiere(Color(0.25, 0.24, 0.26)))
-	_ajouter_visuel(neons, _matiere(Color.WHITE, 4.0))
+	_ajouter_visuel(neons, _matiere(Color.WHITE, 1.6))
 	_ajouter_collision(invisibles)
 
 
@@ -436,11 +458,16 @@ func _construire_tremplin(o: Dictionary, st: SurfaceTool) -> void:
 		h_precedente = h
 
 
-## Un tunnel : murs, plafond, lampes au plafond, et une grande façade de
-## béton à chaque entrée.
+## Un tunnel : murs, plafond, lampes au plafond, une grande façade de
+## béton à chaque entrée, et un toit de roche par-dessus (il cache la
+## tranchée que le sol creuse au-dessus du tunnel, voir terrain_carte.gd).
 func _construire_tunnel(o: Dictionary) -> void:
 	var parois := SurfaceTool.new()
 	parois.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var toit := SurfaceTool.new()
+	toit.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Le profil du toit, vu en coupe : (distance au bord de la route, hauteur).
+	var profil := [Vector2(-110.0, -6.0), Vector2(-45.0, 22.0), Vector2(45.0, 22.0), Vector2(110.0, -6.0)]
 	var lampes: Array[Transform3D] = []
 	var precedente := {}
 	var nombre := maxi(ceili(o.longueur / pas), 1)
@@ -458,8 +485,17 @@ func _construire_tunnel(o: Dictionary) -> void:
 				var milieu_a: Vector3 = a.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.5)
 				var milieu_b: Vector3 = t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.5)
 				_quad(parois, [haut_a, milieu_a, milieu_b, haut_b], -Vector3.UP)
+			var pa := _profil_toit(a, profil)
+			var pb := _profil_toit(t, profil)
+			for k in profil.size() - 1:
+				var cote_haut: Vector3 = (pa[k + 1] - pa[k]).cross(pb[k] - pa[k])
+				var normale := cote_haut.normalized() if cote_haut.y > 0.0 else -cote_haut.normalized()
+				# Le dessus est clair comme les plateaux, les pentes plus sombres.
+				toit.set_color((Color(0.62, 0.47, 0.32) if k == 1 else Color(0.30, 0.17, 0.11)).srgb_to_linear())
+				_quad(toit, [pa[k], pa[k + 1], pb[k + 1], pb[k]], normale)
 		precedente = t
 	_ajouter_solide(parois, _matiere(Color(0.33, 0.31, 0.3)))
+	_ajouter_visuel(toit, _matiere(Color.WHITE))
 
 	var d: float = o.a + 6.0
 	while d < o.a + o.longueur - 6.0:
@@ -467,7 +503,8 @@ func _construire_tunnel(o: Dictionary) -> void:
 		var base := Basis.looking_at(t.avant)
 		lampes.append(Transform3D(base.scaled_local(Vector3(0.6, 0.25, 7.0)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.2)))
 		d += 16.0
-	_ajouter_en_masse(BoxMesh.new(), lampes, [], _matiere(Color(1.0, 0.62, 0.25), 5.0))
+	var teinte := couleur_zone(o.a + 10.0)
+	_ajouter_en_masse(BoxMesh.new(), lampes, [], _matiere(teinte.lerp(Color.WHITE, 0.6), 2.5))
 
 	# Des traits lumineux sur les murs : ils défilent et donnent la vitesse.
 	var traits: Array[Transform3D] = []
@@ -481,10 +518,19 @@ func _construire_tunnel(o: Dictionary) -> void:
 			var pb: Vector3 = _bord(b, cote) + b.droite * decalage + Vector3.UP * 2.2
 			traits.append(_poutre(pa, pb, 0.25))
 		d += 11.0
-	_ajouter_en_masse(BoxMesh.new(), traits, [], _matiere(Color(0.2, 0.9, 1.0), 4.0))
+	_ajouter_en_masse(BoxMesh.new(), traits, [], _matiere(teinte, 2.0))
 
 	_construire_facade(_cadre(o.a))
 	_construire_facade(_cadre(o.a + o.longueur))
+
+
+func _profil_toit(t: Dictionary, profil: Array) -> Array[Vector3]:
+	var cote := Vector3(t.droite.x, 0.0, t.droite.z).normalized()
+	var demi: float = t.largeur * 0.5
+	var points: Array[Vector3] = []
+	for p: Vector2 in profil:
+		points.append(t.pos + cote * (p.x + demi * signf(p.x)) + Vector3.UP * p.y)
+	return points
 
 
 func _construire_facade(t: Dictionary) -> void:
@@ -492,12 +538,12 @@ func _construire_facade(t: Dictionary) -> void:
 	var demi: float = t.largeur * 0.5 + 0.6
 	var blocs: Array[Transform3D] = []
 	for cote in [-1.0, 1.0]:
-		blocs.append(Transform3D(base.scaled_local(Vector3(30.0, 70.0, 8.0)), t.pos + t.droite * ((demi + 15.0) * cote) + Vector3.UP * 5.0))
-	blocs.append(Transform3D(base.scaled_local(Vector3(demi * 2.0 + 60.0, 30.0, 8.0)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.5 + 15.0)))
+		blocs.append(Transform3D(base.scaled_local(Vector3(60.0, 70.0, 8.0)), t.pos + t.droite * ((demi + 30.0) * cote) + Vector3.UP * 5.0))
+	blocs.append(Transform3D(base.scaled_local(Vector3(demi * 2.0 + 120.0, 30.0, 8.0)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 2.5 + 15.0)))
 	_ajouter_en_masse(BoxMesh.new(), blocs, [], _matiere(Color(0.36, 0.33, 0.32)))
 	# Un bandeau lumineux au-dessus de l'entrée.
 	var bandeau: Array[Transform3D] = [Transform3D(base.scaled_local(Vector3(demi * 2.0, 0.6, 8.4)), t.pos + Vector3.UP * (HAUTEUR_TUNNEL + 3.5))]
-	_ajouter_en_masse(BoxMesh.new(), bandeau, [], _matiere(Color(1.0, 0.62, 0.25), 4.0))
+	_ajouter_en_masse(BoxMesh.new(), bandeau, [], _matiere(couleur_zone(t.d), 2.0))
 
 
 ## Un pont à haubans : deux paires de grands pylônes, d'où partent des
@@ -529,7 +575,7 @@ func _construire_pont(o: Dictionary) -> void:
 			pylones.append(_poutre(Vector3(gauche.x, t.pos.y + h, gauche.z), Vector3(droite.x, t.pos.y + h, droite.z), 2.5))
 	_ajouter_en_masse(BoxMesh.new(), pylones, [], _matiere(Color(0.42, 0.40, 0.42)))
 	_ajouter_en_masse(BoxMesh.new(), cables, [], _matiere(Color(0.75, 0.78, 0.85), 0.6))
-	_ajouter_en_masse(BoxMesh.new(), feux, [], _matiere(Color(1.0, 0.1, 0.1), 8.0))
+	_ajouter_en_masse(BoxMesh.new(), feux, [], _matiere(Color(1.0, 0.15, 0.1), 3.0))
 
 
 ## Une poutre (une boîte allongée) entre deux points.
@@ -580,7 +626,7 @@ func _construire_portique(d: float, couleur_neon: Color) -> void:
 	elements.append(Transform3D(base.scaled_local(Vector3(ecart * 2.0 + 1.6, 1.8, 2.2)), t.pos + Vector3.UP * hauteur))
 	_ajouter_en_masse(BoxMesh.new(), elements, [], _matiere(Color(0.38, 0.34, 0.33)))
 	var neon: Array[Transform3D] = [Transform3D(base.scaled_local(Vector3(ecart * 2.0 - 2.0, 0.4, 0.4)), t.pos + Vector3.UP * (hauteur - 1.1))]
-	_ajouter_en_masse(BoxMesh.new(), neon, [], _matiere(couleur_neon, 5.0))
+	_ajouter_en_masse(BoxMesh.new(), neon, [], _matiere(couleur_neon, 2.5))
 
 
 ## Les limites du circuit vu de dessus (x, z), avec une marge.

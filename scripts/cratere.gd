@@ -1,9 +1,10 @@
 class_name Cratere
 extends RefCounted
-## La zone cratère : puits de lave, rochers et monstre.
+## La zone cratère : un grand champ libre en terre, et le monstre.
 ##
 ## Ce que le fichier de circuit peut donner, dans OBSTACLES :
-## - {"type": "cratere", "a": …, "longueur": …} : la zone large, sans murets ;
+## - {"type": "cratere", "a": …, "longueur": …} : la zone large, sans murets
+##   (construite par circuit_trace.gd) ;
 ## - {"type": "puits", "a": …, "decalage": …, "rayon": …} : un puits de lave
 ##   (on y tombe) ; « decalage » est la distance au centre de la route
 ##   (négatif = à gauche) ;
@@ -29,28 +30,12 @@ func _init(circuit, graine: int) -> void:
 func construire(obstacles: Array) -> void:
 	for o in obstacles:
 		match o.type:
-			"cratere":
-				_construire_rebords(o)
 			"puits":
 				_construire_puits(o)
 			"rochers":
 				_construire_rochers(o)
 			"monstre":
 				_construire_monstre(o)
-
-
-## De gros rochers le long des bords : ils montrent où est le mur invisible.
-func _construire_rebords(o: Dictionary) -> void:
-	var rochers: Array[Transform3D] = []
-	var d: float = o.a
-	while d < o.a + o.longueur:
-		var t: Dictionary = _circuit._cadre(d)
-		for cote in [-1.0, 1.0]:
-			var taille := _hasard.randf_range(5.0, 12.0)
-			var p: Vector3 = t.pos + t.droite * ((t.largeur * 0.5 + taille * 0.35) * cote)
-			rochers.append(_placement_rocher(p, taille))
-		d += _hasard.randf_range(9.0, 15.0)
-	_circuit._ajouter_en_masse(_rocher, rochers, _sans_couleur, _circuit._matiere(Color(0.2, 0.13, 0.12)))
 
 
 ## Un puits de lave : un trou dans le sol, des parois sombres, de la lave

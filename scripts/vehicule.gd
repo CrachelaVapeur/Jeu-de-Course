@@ -23,9 +23,9 @@ signal atterrissage(force: float)
 
 @export_group("Vitesse (en mètres par seconde, ×3.6 pour des km/h)")
 @export var vitesse_max := 75.0
-@export var vitesse_boost := 170.0
+@export var vitesse_boost := 146.0  ## environ 525 km/h : la vitesse la plus haute du jeu
 @export var acceleration := 26.0
-@export var acceleration_boost := 110.0
+@export var acceleration_boost := 82.0  ## atteinte au bout de la montée du boost
 @export var freinage := 60.0
 @export var frottement := 8.0
 
@@ -41,6 +41,10 @@ signal atterrissage(force: float)
 @export var recharge := 10.0  ## par seconde sans boost
 @export var attaque_distorsion := 8.0  ## vitesse à laquelle l'effet de boost s'installe
 @export var relachement_distorsion := 2.5  ## vitesse à laquelle il s'efface après le boost
+## Secondes pour que le boost donne toute sa poussée : il démarre doucement,
+## puis pousse de plus en plus fort (une courbe qui se creuse, pas un coup sec).
+## 0 = toute la poussée d'un coup.
+@export var duree_montee_boost := 0.0
 
 @export_group("Circuit")
 ## Coché : ancienne ligne droite d'essai. Décoché : vrai circuit avec relief.
@@ -64,6 +68,8 @@ var gaz := 0.0
 ## 0 = conduite normale, 1 = plein effet de boost. La caméra (champ de vision)
 ## et le son (concentration) s'en servent pour rester synchronisés.
 var distorsion := 0.0
+## 0 au début du boost, 1 quand il pousse à fond (voir duree_montee_boost).
+var montee_boost := 0.0
 
 var _cap := 0.0  # angle du bolide autour de l'axe vertical
 var _temps := 0.0
@@ -73,6 +79,7 @@ var _depart := Transform3D.IDENTITY
 # Positions sûres récentes (au sol), pour réapparaître après une chute.
 var _historique: Array[Transform3D] = []
 var _minuteur_historique := 0.0
+var _bloque_depuis := 0.0  # secondes passées à accélérer sans avancer
 
 @onready var _carrosserie: Node3D = $Carrosserie
 @onready var _flammes: Array[Node3D] = [
@@ -125,8 +132,13 @@ func _conduire(delta: float) -> void:
 
 	if en_boost:
 		jauge_boost = maxf(jauge_boost - consommation * delta, 0.0)
-		vitesse = move_toward(vitesse, vitesse_boost, acceleration_boost * delta)
+		montee_boost = minf(montee_boost + delta / duree_montee_boost, 1.0) if duree_montee_boost > 0.0 else 1.0
+		# La poussée grandit avec le carré de la montée : douce au début, très
+		# forte à la fin.
+		var poussee := lerpf(0.15, 1.0, montee_boost * montee_boost)
+		vitesse = move_toward(vitesse, vitesse_boost, acceleration_boost * poussee * delta)
 	else:
+		montee_boost = maxf(montee_boost - delta * 2.0, 0.0)
 		jauge_boost = minf(jauge_boost + recharge * delta, jauge_max)
 		if vitesse > vitesse_max:
 			# Après un boost, on redescend doucement : la vitesse « reste » un peu.
@@ -213,6 +225,16 @@ func _surveiller_chute(delta: float) -> void:
 		_reapparaitre()
 		return
 
+	# Coincé (on accélère mais on n'avance plus depuis 2 s) : on réapparaît.
+	if gaz > 0.5 and get_real_velocity().length() < 2.0:
+		_bloque_depuis += delta
+		if _bloque_depuis > 2.0:
+			_bloque_depuis = 0.0
+			_reapparaitre()
+			return
+	else:
+		_bloque_depuis = 0.0
+
 	# Toutes les 0,25 s, on note où on est si on roule normalement au sol.
 	_minuteur_historique += delta
 	if _minuteur_historique >= 0.25 and is_on_floor() and not _contact_mur:
@@ -247,7 +269,8 @@ func _reapparaitre() -> void:
 
 func _mettre_a_jour_distorsion(delta: float) -> void:
 	var rapidite := attaque_distorsion if en_boost else relachement_distorsion
-	distorsion = lerpf(distorsion, 1.0 if en_boost else 0.0, 1.0 - exp(-rapidite * delta))
+	# L'effet suit la montée du boost : il s'installe en même temps que la poussée.
+	distorsion = lerpf(distorsion, montee_boost if en_boost else 0.0, 1.0 - exp(-rapidite * delta))
 
 
 func _garder_sur_la_piste() -> void:
@@ -308,5 +331,6 @@ func _recommencer() -> void:
 	vitesse = 0.0
 	jauge_boost = jauge_max
 	distorsion = 0.0
+	montee_boost = 0.0
 	_historique.clear()
 	teleporte.emit(global_position - ancienne)

@@ -1,12 +1,15 @@
 class_name Villes
 extends RefCounted
-## Les villes et les grands monuments d'un circuit : immeubles aux fenêtres
-## éclairées par endroits, enseignes, feux rouges sur les toits, pyramide
+## Les villes et les grands monuments d'un circuit : immeubles aux étages
+## éclairés par endroits, feux rouges sur les plus hautes tours, pyramide
 ## lumineuse, cheminées d'usine, phare géant.
+## Les immeubles se tiennent à distance de la route, et ceux qui en sont
+## proches restent bas : la ville se voit comme une silhouette, au loin.
 ##
 ## Ce que le fichier de circuit peut donner :
-## - VILLES : [{"centre": [x, y], "rayon": r, "hauteur_max": h}, …]
-##   (x, y et rayon en pixels de la carte, comme les points du tracé) ;
+## - VILLES : [{"centre": [x, y], "rayon": r, "hauteur_max": h, "teinte": t}, …]
+##   (x, y et rayon en pixels de la carte, comme les points du tracé ;
+##   teinte des lumières : 0 = chaude, 1 = froide) ;
 ## - MONUMENTS : [{"type": "pyramide" | "cheminees" | "phare", "position": [x, y], …}, …].
 
 const SHADER_IMMEUBLE := preload("res://shaders/immeuble.gdshader")
@@ -18,9 +21,10 @@ const COULEURS_IMMEUBLES: Array[Color] = [
 	Color(0.22, 0.24, 0.30), Color(0.30, 0.30, 0.34), Color(0.18, 0.20, 0.24),
 	Color(0.34, 0.31, 0.30), Color(0.25, 0.28, 0.36), Color(0.40, 0.38, 0.40),
 ]
-const COULEURS_ENSEIGNES: Array[Color] = [
-	Color(1.0, 0.15, 0.5), Color(0.2, 0.9, 1.0), Color(1.0, 0.6, 0.1), Color(0.6, 0.3, 1.0), Color(0.3, 1.0, 0.5),
-]
+## Distance libre entre le bord de la route et les premiers immeubles.
+const RECUL := 45.0
+## Au-delà de cette distance de la route, les immeubles ont toute leur hauteur.
+const RECUL_HAUTEUR := 260.0
 
 var _circuit  # le circuit (circuit_trace.gd) : pour ses matières et ses outils
 var _echelle := 1.0
@@ -58,8 +62,7 @@ func _construire_ville(ville: Dictionary) -> void:
 	var reglages: Array[Color] = []
 	var toits: Array[Transform3D] = []
 	var feux: Array[Transform3D] = []
-	var enseignes: Array[Transform3D] = []
-	var couleurs_enseignes: Array[Color] = []
+	var teinte: float = ville.get("teinte", 0.35)
 
 	# Un quadrillage de pâtés de maisons, un peu déformé pour faire naturel.
 	var pas_ilot := 34.0
@@ -75,20 +78,24 @@ func _construire_ville(ville: Dictionary) -> void:
 				continue  # dans la mer ou dans la montagne
 			var largeur := _hasard.randf_range(12.0, 26.0)
 			var profondeur := _hasard.randf_range(12.0, 26.0)
-			if _distance_route(p) < _circuit.largeur_route_pres(p) * 0.5 + maxf(largeur, profondeur) * 0.75 + 6.0:
+			var ecart_route: float = _distance_route(p) - _circuit.largeur_route_pres(p) * 0.5 - maxf(largeur, profondeur) * 0.75
+			if ecart_route < RECUL:
 				continue
-			# Plus haut au centre, avec quelques tours qui dépassent.
+			# Plus haut au centre, avec quelques tours qui dépassent, mais bas
+			# près de la route.
 			var hauteur := lerpf(hauteur_max, 18.0, pow(eloignement, 0.6)) * _hasard.randf_range(0.45, 1.1)
 			if _hasard.randf() < 0.08:
 				hauteur *= 1.6
+			hauteur *= lerpf(0.3, 1.0, smoothstep(RECUL, RECUL_HAUTEUR, ecart_route))
 			hauteur = maxf(hauteur, 12.0)
 			var angle := _hasard.randf_range(-0.15, 0.15)
 			var base := Basis(Vector3.UP, angle)
 			corps.append(Transform3D(base.scaled_local(Vector3(largeur, hauteur, profondeur)), Vector3(p.x, sol + hauteur * 0.5, p.y)))
 			couleurs.append(COULEURS_IMMEUBLES[_hasard.randi() % COULEURS_IMMEUBLES.size()])
-			reglages.append(Color(_hasard.randf_range(0.05, 0.35), _hasard.randf(), 1.0 if _hasard.randf() < 0.35 else 0.0, 0.0))
+			reglages.append(Color(_hasard.randf_range(0.05, 0.3), _hasard.randf(), 1.0 if _hasard.randf() < teinte else 0.0, 0.0))
 			var sommet := sol + hauteur
-			# Les grandes tours ont un étage en retrait, une antenne et un feu rouge.
+			# Les grandes tours ont un étage en retrait et une antenne ; les plus
+			# hautes, un feu rouge.
 			if hauteur > 70.0:
 				var h2 := hauteur * _hasard.randf_range(0.12, 0.25)
 				corps.append(Transform3D(base.scaled_local(Vector3(largeur * 0.65, h2, profondeur * 0.65)), Vector3(p.x, sommet + h2 * 0.5, p.y)))
@@ -97,26 +104,18 @@ func _construire_ville(ville: Dictionary) -> void:
 				sommet += h2
 				var antenne := _hasard.randf_range(8.0, 25.0)
 				toits.append(Transform3D(base.scaled_local(Vector3(0.6, antenne, 0.6)), Vector3(p.x, sommet + antenne * 0.5, p.y)))
-				feux.append(Transform3D(base.scaled_local(Vector3(1.2, 1.2, 1.2)), Vector3(p.x, sommet + antenne, p.y)))
+				if hauteur > 110.0:
+					feux.append(Transform3D(base.scaled_local(Vector3(1.2, 1.2, 1.2)), Vector3(p.x, sommet + antenne, p.y)))
 			else:
 				# Les petits immeubles ont des blocs techniques sur le toit.
 				toits.append(Transform3D(base.scaled_local(Vector3(largeur * 0.3, 3.0, profondeur * 0.3)), Vector3(p.x, sommet + 1.5, p.y)))
-			# Une enseigne lumineuse sur certains murs.
-			if _hasard.randf() < 0.18 and hauteur > 20.0:
-				var face := base * Vector3(0, 0, 1 if _hasard.randf() < 0.5 else -1)
-				var h_enseigne := _hasard.randf_range(6.0, minf(hauteur * 0.6, 30.0))
-				var y_enseigne := sol + _hasard.randf_range(8.0, maxf(hauteur - h_enseigne, 9.0))
-				var position_enseigne := Vector3(p.x, y_enseigne, p.y) + face * (profondeur * 0.5 + 0.4)
-				enseignes.append(Transform3D(base.scaled_local(Vector3(_hasard.randf_range(2.0, 5.0), h_enseigne, 0.4)), position_enseigne))
-				couleurs_enseignes.append(COULEURS_ENSEIGNES[_hasard.randi() % COULEURS_ENSEIGNES.size()])
 
 	var matiere := ShaderMaterial.new()
 	matiere.shader = SHADER_IMMEUBLE
 	_circuit._matieres_decor.append(matiere)
 	_ajouter_immeubles(corps, couleurs, reglages, matiere)
 	_circuit._ajouter_en_masse(BoxMesh.new(), toits, _sans_couleur, _circuit._matiere(Color(0.2, 0.2, 0.24)))
-	_circuit._ajouter_en_masse(BoxMesh.new(), feux, _sans_couleur, _circuit._matiere(Color(1.0, 0.08, 0.05), 8.0))
-	_circuit._ajouter_en_masse(BoxMesh.new(), enseignes, couleurs_enseignes, _circuit._matiere(Color.WHITE, 3.5))
+	_circuit._ajouter_en_masse(BoxMesh.new(), feux, _sans_couleur, _circuit._matiere(Color(1.0, 0.1, 0.06), 2.5))
 	print("Ville : %d immeubles" % corps.size())
 
 
@@ -168,20 +167,20 @@ func _construire_pyramide(m: Dictionary) -> void:
 	matiere.shader = SHADER_IMMEUBLE
 	matiere.set_shader_parameter("hauteur_etage", hauteur / marches / 2.0)
 	matiere.set_shader_parameter("largeur_fenetre", 6.0)
-	matiere.set_shader_parameter("force_fenetres", 3.5)
+	matiere.set_shader_parameter("force_fenetres", 1.4)
 	_circuit._matieres_decor.append(matiere)
 	_ajouter_immeubles(gradins, couleurs, reglages, matiere)
 
 	var sommet := Vector3(p.x, sol + hauteur + 4.0, p.y)
 	var pointe: Array[Transform3D] = [Transform3D(Basis.from_scale(Vector3(10, 8, 10)), sommet)]
-	_circuit._ajouter_en_masse(BoxMesh.new(), pointe, _sans_couleur, _circuit._matiere(Color(1.0, 0.75, 0.4), 10.0))
+	_circuit._ajouter_en_masse(BoxMesh.new(), pointe, _sans_couleur, _circuit._matiere(Color(1.0, 0.75, 0.4), 3.0))
 
 	# L'aura : un grand halo, et une vraie lumière qui éclaire les alentours.
-	_ajouter_halo(Vector3(p.x, sol + hauteur * 0.55, p.y), cote * 2.6, Color(1.0, 0.55, 0.25), 0.45)
-	_ajouter_halo(sommet, 120.0, Color(1.0, 0.8, 0.5), 0.9)
+	_ajouter_halo(Vector3(p.x, sol + hauteur * 0.55, p.y), cote * 2.6, Color(1.0, 0.6, 0.3), 0.2)
+	_ajouter_halo(sommet, 120.0, Color(1.0, 0.8, 0.5), 0.4)
 	var lumiere := OmniLight3D.new()
-	lumiere.light_color = Color(1.0, 0.6, 0.3)
-	lumiere.light_energy = 6.0
+	lumiere.light_color = Color(1.0, 0.65, 0.35)
+	lumiere.light_energy = 3.0
 	lumiere.omni_range = cote * 2.5
 	lumiere.position = Vector3(p.x, sol + hauteur * 0.6, p.y)
 	_circuit.add_child(lumiere)
@@ -189,7 +188,7 @@ func _construire_pyramide(m: Dictionary) -> void:
 	# Des projecteurs qui partent du sommet en éventail, comme sur la carte.
 	for k in 4:
 		var direction := Vector3(cos(k * TAU / 4.0 + 0.4), 0.55, sin(k * TAU / 4.0 + 0.4)).normalized()
-		_ajouter_faisceau(sommet, direction, 900.0, 40.0, Color(1.0, 0.85, 0.6), 0.3)
+		_ajouter_faisceau(sommet, direction, 900.0, 40.0, Color(1.0, 0.85, 0.6), 0.12)
 
 
 ## Trois grosses cheminées d'usine en chantier, avec des grues et des feux.
@@ -216,9 +215,9 @@ func _construire_cheminees(m: Dictionary) -> void:
 	var cylindre := CylinderMesh.new()
 	cylindre.radial_segments = 12
 	_circuit._ajouter_en_masse(cylindre, corps, _sans_couleur, _circuit._matiere(Color(0.45, 0.52, 0.62)))
-	_circuit._ajouter_en_masse(cylindre, echafaudages, _sans_couleur, _circuit._matiere(Color(0.9, 0.85, 0.4), 1.2))
+	_circuit._ajouter_en_masse(cylindre, echafaudages, _sans_couleur, _circuit._matiere(Color(1.0, 0.78, 0.5), 0.5))
 	_circuit._ajouter_en_masse(BoxMesh.new(), grues, _sans_couleur, _circuit._matiere(Color(0.1, 0.1, 0.12)))
-	_circuit._ajouter_en_masse(BoxMesh.new(), feux, _sans_couleur, _circuit._matiere(Color(1.0, 0.08, 0.05), 8.0))
+	_circuit._ajouter_en_masse(BoxMesh.new(), feux, _sans_couleur, _circuit._matiere(Color(1.0, 0.1, 0.06), 2.5))
 
 
 ## Un phare géant sur la presqu'île, avec un double faisceau qui tourne.
@@ -244,12 +243,12 @@ func _construire_phare(m: Dictionary) -> void:
 		bandes.append(Transform3D(Basis.from_scale(Vector3(r * 2.0, 1.2, r * 2.0)), Vector3(p.x, y, p.y)))
 	var cylindre := CylinderMesh.new()
 	cylindre.radial_segments = 16
-	_circuit._ajouter_en_masse(cylindre, bandes, _sans_couleur, _circuit._matiere(Color(0.2, 0.9, 1.0), 3.0))
+	_circuit._ajouter_en_masse(cylindre, bandes, _sans_couleur, _circuit._matiere(Color(0.35, 0.85, 1.0), 1.5))
 
 	var lanterne := Vector3(p.x, sol + hauteur + 8.0, p.y)
 	var verre: Array[Transform3D] = [Transform3D(Basis.from_scale(Vector3(18, 16, 18)), lanterne)]
-	_circuit._ajouter_en_masse(cylindre, verre, _sans_couleur, _circuit._matiere(Color(1.0, 0.95, 0.8), 6.0))
-	_ajouter_halo(lanterne, 160.0, Color(1.0, 0.9, 0.7), 0.8)
+	_circuit._ajouter_en_masse(cylindre, verre, _sans_couleur, _circuit._matiere(Color(0.85, 0.95, 1.0), 3.0))
+	_ajouter_halo(lanterne, 160.0, Color(0.8, 0.92, 1.0), 0.35)
 
 	var pivot := Node3D.new()
 	pivot.set_script(SCRIPT_TOURNER)
@@ -258,7 +257,7 @@ func _construire_phare(m: Dictionary) -> void:
 	_circuit.add_child(pivot)
 	for sens in [-1.0, 1.0]:
 		# Le cône est couché à l'horizontale, sa pointe sur la lanterne.
-		var faisceau := _faisceau(1600.0, 70.0, Color(1.0, 0.95, 0.8), 0.35)
+		var faisceau := _faisceau(1600.0, 70.0, Color(0.85, 0.95, 1.0), 0.15)
 		faisceau.rotation.z = PI * 0.5 * sens
 		faisceau.position = Vector3(800.0 * sens, 0.0, 0.0)
 		pivot.add_child(faisceau)

@@ -7,6 +7,9 @@ render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabl
 uniform vec4 couleur : source_color = vec4(1.0, 0.85, 0.6, 1.0);
 uniform float force = 0.5;
 uniform float noir_et_blanc : hint_range(0.0, 1.0) = 0.0;
+// Le brouillard normal dessine des rectangles sur ces objets transparents :
+// on l'imite ici, en effaçant la lumière avec la distance.
+uniform float brume = 0.0012;
 
 void fragment() {
 	// Plus fort près de la source, et quand on regarde le cône de côté.
@@ -14,5 +17,5 @@ void fragment() {
 	float bords = pow(abs(dot(NORMAL, VIEW)), 1.5);
 	vec3 c = couleur.rgb;
 	c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))), noir_et_blanc);
-	ALBEDO = c * force * le_long * bords;
+	ALBEDO = c * force * le_long * bords * exp(-length(VERTEX) * brume);
 }

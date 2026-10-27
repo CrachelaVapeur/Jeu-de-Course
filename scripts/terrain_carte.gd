@@ -105,12 +105,13 @@ func construire(tranches: Array[Dictionary], zone_a: Callable, coin_min: Vector2
 		var route := hauteur_route[k]
 		var demi := demi_largeur[k]
 		if zone[k] == ZONE_TUNNEL:
-			# La montagne reste au-dessus du tunnel.
-			if d < demi + 30.0:
-				hauteurs[k] = maxf(naturel, route + 20.0)
+			# Un sol fait de carreaux de 20 m ne sait pas faire de voûte : on
+			# creuse une tranchée, et le tunnel a son propre toit, qui la cache
+			# (voir circuit_trace.gd). Sinon le sol traverse le tunnel en pente.
+			hauteurs[k] = minf(naturel, lerpf(route - 3.0, naturel, smoothstep(demi + 20.0, demi + 90.0, d)))
 		elif zone[k] == ZONE_CRATERE:
 			# Le fond du cratère, puis un rebord qui remonte et redescend.
-			var bord := demi + 20.0
+			var bord := demi + 4.0
 			if d < bord:
 				hauteurs[k] = route - 0.4
 			else:
