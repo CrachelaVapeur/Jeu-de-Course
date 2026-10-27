@@ -9,6 +9,7 @@
 [ext_resource type="Shader" uid="uid://1f812xse2hra" path="res://shaders/lignes_vitesse.gdshader" id="7_lignes"]
 [ext_resource type="Shader" uid="uid://b5rev2jrvv3cb" path="res://shaders/tunnel.gdshader" id="8_tunnel"]
 
+
 [sub_resource type="ProceduralSkyMaterial" id="ciel_matiere"]
 sky_top_color = Color(0.13, 0.06, 0.24, 1)
 sky_horizon_color = Color(0.98, 0.5, 0.3, 1)

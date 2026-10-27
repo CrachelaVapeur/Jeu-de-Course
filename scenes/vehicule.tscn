@@ -1,69 +1,24 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://scripts/vehicule.gd" id="1_script"]
-[ext_resource type="Shader" path="res://shaders/toon.gdshader" id="2_toon"]
+[ext_resource type="Shader" path="res://shaders/ps1.gdshader" id="2_toon"]
+[ext_resource type="Texture2D" path="res://textures/voiture_atlas.png" id="5_atlas"]
 [ext_resource type="Script" path="res://scripts/trainee_lumiere.gd" id="3_trainee"]
+[ext_resource type="PackedScene" path="res://models/muscle_car_ps1.glb" id="4_modele"]
 
-[sub_resource type="ShaderMaterial" id="peinture"]
+[sub_resource type="ShaderMaterial" id="modele"]
 shader = ExtResource("2_toon")
-shader_parameter/couleur = Color(0.95, 0.38, 0.1, 1)
-shader_parameter/force_emission = 0.0
-shader_parameter/rugosite = 0.35
-
-[sub_resource type="ShaderMaterial" id="bande"]
-shader = ExtResource("2_toon")
-shader_parameter/couleur = Color(0.95, 0.92, 0.85, 1)
-shader_parameter/force_emission = 0.0
-shader_parameter/rugosite = 0.35
-
-[sub_resource type="ShaderMaterial" id="metal"]
-shader = ExtResource("2_toon")
-shader_parameter/couleur = Color(0.2, 0.19, 0.22, 1)
-shader_parameter/force_emission = 0.0
-shader_parameter/rugosite = 0.5
-
-[sub_resource type="ShaderMaterial" id="vitre"]
-shader = ExtResource("2_toon")
-shader_parameter/couleur = Color(0.15, 0.55, 0.6, 1)
-shader_parameter/force_emission = 0.3
-shader_parameter/rugosite = 0.1
+shader_parameter/atlas = ExtResource("5_atlas")
+shader_parameter/teinte_peinture = Color(0.72, 0.74, 0.8, 1)
+shader_parameter/taille_tuile = 1.6
+shader_parameter/resolution_sommets = 140.0
+shader_parameter/noir_et_blanc = 0.0
 
 [sub_resource type="StandardMaterial3D" id="flamme"]
 albedo_color = Color(1, 1, 1, 1)
 emission_enabled = true
 emission = Color(0.3, 0.9, 1, 1)
 emission_energy_multiplier = 4.0
-
-[sub_resource type="BoxMesh" id="coque"]
-material = SubResource("peinture")
-size = Vector3(1.4, 0.45, 3.6)
-
-[sub_resource type="BoxMesh" id="bande_mesh"]
-material = SubResource("bande")
-size = Vector3(0.35, 0.47, 3.62)
-
-[sub_resource type="BoxMesh" id="nez"]
-material = SubResource("peinture")
-size = Vector3(1.0, 0.25, 1.6)
-
-[sub_resource type="SphereMesh" id="cockpit"]
-material = SubResource("vitre")
-radius = 0.45
-height = 0.5
-
-[sub_resource type="BoxMesh" id="aileron"]
-material = SubResource("peinture")
-size = Vector3(2.6, 0.1, 0.6)
-
-[sub_resource type="BoxMesh" id="support"]
-material = SubResource("metal")
-size = Vector3(0.12, 0.5, 0.3)
-
-[sub_resource type="CylinderMesh" id="reacteur"]
-material = SubResource("metal")
-top_radius = 0.38
-bottom_radius = 0.42
-height = 2.0
 
 [sub_resource type="CapsuleShape3D" id="forme_collision"]
 radius = 0.55
@@ -72,7 +27,7 @@ height = 4.2
 [sub_resource type="CylinderMesh" id="cone_flamme"]
 material = SubResource("flamme")
 top_radius = 0.0
-bottom_radius = 0.28
+bottom_radius = 0.13
 height = 1.0
 radial_segments = 12
 rings = 1
@@ -81,6 +36,7 @@ rings = 1
 floor_max_angle = 0.87266463
 floor_snap_length = 0.6
 script = ExtResource("1_script")
+matiere_modele = SubResource("modele")
 
 [node name="Collision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.55, 0)
@@ -89,52 +45,47 @@ shape = SubResource("forme_collision")
 [node name="Carrosserie" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, 0)
 
-[node name="Coque" type="MeshInstance3D" parent="Carrosserie"]
-mesh = SubResource("coque")
+[node name="Modele" parent="Carrosserie" instance=ExtResource("4_modele")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.7, 0)
 
-[node name="Bande" type="MeshInstance3D" parent="Carrosserie"]
-mesh = SubResource("bande_mesh")
-
-[node name="Nez" type="MeshInstance3D" parent="Carrosserie"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.08, -2.4)
-mesh = SubResource("nez")
-
-[node name="Cockpit" type="MeshInstance3D" parent="Carrosserie"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1.8, 0, 0.3, 0.2)
-mesh = SubResource("cockpit")
-
-[node name="Aileron" type="MeshInstance3D" parent="Carrosserie"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, 1.7)
-mesh = SubResource("aileron")
-
-[node name="SupportG" type="MeshInstance3D" parent="Carrosserie"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.45, 1.7)
-mesh = SubResource("support")
-
-[node name="SupportD" type="MeshInstance3D" parent="Carrosserie"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.45, 1.7)
-mesh = SubResource("support")
-
-[node name="ReacteurG" type="MeshInstance3D" parent="Carrosserie"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -1.05, 0, 0.9)
-mesh = SubResource("reacteur")
+[node name="ReacteurG" type="Node3D" parent="Carrosserie"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, -0.55, -0.2, 2.74)
 
 [node name="Flamme" type="Node3D" parent="Carrosserie/ReacteurG"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 
 [node name="Mesh" type="MeshInstance3D" parent="Carrosserie/ReacteurG/Flamme"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 mesh = SubResource("cone_flamme")
 cast_shadow = 0
 
-[node name="ReacteurD" type="MeshInstance3D" parent="Carrosserie"]
-transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 1.05, 0, 0.9)
-mesh = SubResource("reacteur")
+[node name="ReacteurD" type="Node3D" parent="Carrosserie"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0.55, -0.2, 2.74)
 
 [node name="Flamme" type="Node3D" parent="Carrosserie/ReacteurD"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 
 [node name="Mesh" type="MeshInstance3D" parent="Carrosserie/ReacteurD/Flamme"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("cone_flamme")
+cast_shadow = 0
+
+[node name="SortieG" type="Node3D" parent="Carrosserie"]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, -1.25, -0.4, 0.95)
+
+[node name="Flamme" type="Node3D" parent="Carrosserie/SortieG"]
+transform = Transform3D(1, 0, 0, 0, 0.766, -0.643, 0, 0.643, 0.766, 0, 0, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="Carrosserie/SortieG/Flamme"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("cone_flamme")
+cast_shadow = 0
+
+[node name="SortieD" type="Node3D" parent="Carrosserie"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 1.25, -0.4, 0.95)
+
+[node name="Flamme" type="Node3D" parent="Carrosserie/SortieD"]
+transform = Transform3D(1, 0, 0, 0, 0.766, -0.643, 0, 0.643, 0.766, 0, 0, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="Carrosserie/SortieD/Flamme"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 mesh = SubResource("cone_flamme")
 cast_shadow = 0
@@ -142,7 +93,9 @@ cast_shadow = 0
 [node name="Trainee" type="MeshInstance3D" parent="Carrosserie/ReacteurG/Flamme" node_paths=PackedStringArray("vehicule")]
 script = ExtResource("3_trainee")
 vehicule = NodePath("../../../..")
+largeur = 0.12
 
 [node name="Trainee" type="MeshInstance3D" parent="Carrosserie/ReacteurD/Flamme" node_paths=PackedStringArray("vehicule")]
 script = ExtResource("3_trainee")
 vehicule = NodePath("../../../..")
+largeur = 0.12
