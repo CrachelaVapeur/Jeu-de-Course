@@ -73,25 +73,31 @@ signal atterrissage(force: float)
 @export var rigidite_haute_vitesse := 0.0  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
 
 @export_group("Dérapage (vrais circuits)")
-## Comme OutRun : on amorce le dérapage (appui sur frein / Espace, ou lever de pied) en virage,
-## au-dessus de la vitesse minimale. Le dérapage PROLONGE le virage en cours : il ne plonge pas
-## vers l'intérieur. Il sert à régler la courbure : le volant la serre ou l'ouvre, volant au
-## neutre on garde la courbure (bolide « planté »), et en contre-braquant jusqu'au bout on
-## repasse naturellement de l'autre côté.
-@export var vitesse_min_derapage := 27.8  ## m/s (100 km/h) : en dessous, impossible d'amorcer un dérapage, et s'il est en cours il s'arrête
-@export var duree_transition := 0.6  ## secondes pour que le nez se mette en travers progressivement
+## UNE seule variable pilote tout : le « grip » de l'arrière (1 = pleine adhérence, 0 = il glisse).
+## - un appui sur frein / Espace, ou lâcher le gaz, fait chuter le grip d'un coup (au-dessus de la
+##   vitesse minimale) ; tenir Espace le maintient bas ;
+## - le grip remonte tout seul ; bien plus lentement tant qu'on braque (pneus saturés) ;
+## - plus le grip est bas, plus le nez se met en travers, plus la courbure est « tenue » (volant
+##   lâché = on garde l'élan) et plus elle change progressivement (jamais de saut de côté) ;
+## - en dessous de « seuil_derapage », on est « en dérapage » (fumée, recharge de boost).
+@export var vitesse_min_derapage := 27.8  ## m/s (100 km/h) : en dessous, le grip revient et rien ne peut le faire chuter
+@export var seuil_derapage := 0.6  ## grip en dessous duquel on est « en dérapage »
+@export var impulsion_appui := 0.8  ## grip perdu d'un coup à un appui sur frein ou Espace
+@export var impulsion_levee := 0.5  ## grip perdu d'un coup quand on lâche le gaz
+@export var grip_frein_a_main := 0.2  ## grip maintenu tant qu'Espace est tenu
+@export var grip_frein := 0.5  ## grip maintenu tant que le frein est tenu en virage
+@export var recuperation := 0.45  ## par seconde : le grip remonte quand le volant est au neutre
+@export var recuperation_en_virage := 0.05  ## par seconde : idem tant qu'on braque (le dérapage dure le temps du virage)
 @export var angle_entree_lent := 0.35  ## radians : angle de glisse à pleine courbure, à basse vitesse
 @export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
-@export var bonus_feinte := 1.3  ## angle plus ample si on a braqué à l'opposé juste avant (feinte)
-@export var delai_amorce := 0.7  ## secondes pendant lesquelles un appui (frein, Espace) ou un lever de pied reste « armé » : on peut braquer juste après
 @export var angle_glisse_max := 1.0  ## radians : angle maximum
-@export var facteur_rotation_derapage := 1.15  ## le volant tourne plus fort en dérapage qu'en conduite normale (1 = pareil)
-@export var variation_courbure := 3.0  ## rad/s² : vitesse max à laquelle la courbure peut changer (plus petit = plus progressif, pas de saut de côté)
-@export var maintien_courbure_gaz := 0.35  ## par seconde : volant au neutre sous les gaz, la courbure s'ouvre très lentement
+@export var facteur_rotation_derapage := 1.15  ## le volant tourne un peu plus fort quand le grip est bas
+@export var variation_courbure := 3.0  ## rad/s² : vitesse max de changement de courbure à grip nul (plus petit = plus progressif)
+@export var variation_courbure_grip := 20.0  ## idem à plein grip (conduite normale)
+@export var maintien_courbure_gaz := 0.35  ## par seconde : volant lâché, grip bas, sous gaz : la courbure s'ouvre lentement
 @export var maintien_courbure_sans_gaz := 1.0  ## idem sans les gaz : lever le pied aide à redresser
-@export var angle_sortie := 0.1  ## radians : sous cet angle, volant au neutre, on a retrouvé l'adhérence
+@export var maintien_courbure_grip := 7.0  ## idem à plein grip : on redresse tout de suite
 @export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
-@export var adherence_normale := 9.0  ## hors dérapage la trajectoire rattrape vite le nez
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 @export var recharge_boost_derapage := 14.0  ## jauge gagnée par seconde de dérapage
 
@@ -117,20 +123,13 @@ var _cap := 0.0  # angle du bolide autour de l'axe vertical (là où pointe le n
 var _cap_trajectoire := 0.0  # direction dans laquelle on se déplace vraiment
 var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à gauche)
 var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
+var _grip := 1.0  # adhérence de l'arrière : 1 = normale, 0 = glisse totale
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
-var _angle_tenu := 1.0  # multiplicateur d'angle de glisse (feinte)
 var _ignorer_boost := false  # vrai après une perte de focus, jusqu'au relâchement de la touche
 var _omega := 0.0  # vitesse de rotation de la trajectoire en dérapage (rad/s) : la courbure
-var _t_derapage := 0.0  # temps écoulé depuis le début du dérapage
 var _appui_en_attente := false  # un appui frein/Espace reçu, pas encore pris en compte par la physique
-var _temps_en_l_air := 0.0
-var _amorce := 0.0  # temps restant pendant lequel l'amorce du dérapage est armée
 var _gaz_precedent := 0.0
-var _sens_braquage := 0.0  # dernier côté braqué franchement (pour la feinte)
-var _sens_precedent := 0.0
-var _temps_depuis_changement := 9.0
 var _volant := 0.0  # braquage lissé (-1..1) : le volant a du poids
-var _lacet := 0.0  # vitesse de rotation actuelle du nez (inertie)
 var _temps := 0.0
 var _contact_mur := false
 var _normale_sol := Vector3.UP
@@ -274,7 +273,7 @@ func _physics_process(delta: float) -> void:
 func cap_camera() -> float:
 	# Pendant un dérapage, la caméra regarde surtout la trajectoire : on voit le
 	# bolide de travers (comme dans OutRun) au lieu de rester collé derrière son nez.
-	return _cap - _glisse * 0.75 if en_derapage else _cap
+	return _cap - _glisse * 0.75
 
 
 func ratio_vitesse() -> float:
@@ -329,120 +328,78 @@ func _conduire(delta: float) -> void:
 	else:
 		var controle := 1.0 if is_on_floor() else controle_en_l_air
 		_volant = lerpf(_volant, virage, 1.0 - exp(-raideur_volant * delta))
-		_mettre_a_jour_derapage(delta)
-		if en_derapage:
-			_piloter_derapage(_volant, maniabilite * controle, delta)
-		else:
-			# Sous-virage : plus les pneus saturent, moins le nez suit le volant.
-			var cible := _volant * vitesse_rotation_circuit * facteur_rotation * maniabilite * controle
-			# Direction lourde à grande vitesse : on ne tourne serré qu'en dérapant.
-			cible *= 1.0 - rigidite_haute_vitesse * smoothstep(0.5, 1.0, ratio_vitesse())
-			_lacet = lerpf(_lacet, cible, 1.0 - exp(-inertie_lacet * delta))
-			_cap += _lacet * delta
-			if absf(angle_difference(_cap_trajectoire, _cap)) > 0.25:
-				# Fin de dérapage : le nez revient vers la trajectoire, sans à-coup sur la direction.
-				_cap = lerp_angle(_cap, _cap_trajectoire, 1.0 - exp(-6.0 * delta))
-			else:
-				# L'adhérence ramène vite la trajectoire dans l'axe du nez.
-				_cap_trajectoire = lerp_angle(_cap_trajectoire, _cap, 1.0 - exp(-adherence_normale * delta))
+		_mettre_a_jour_grip(virage, maniabilite * controle, delta)
+		_conduire_avec_grip(virage, maniabilite * controle, delta)
 	rotation.y = _cap
 
 
-## Décide si on est en dérapage. Comme dans OutRun, on l'amorce exprès : à grande
-## vitesse, on braque franchement tout en lâchant le gaz (ou en freinant, ou avec la
-## touche « deraper »). Braquer seul, sans amorce, ne fait jamais déraper.
-func _mettre_a_jour_derapage(delta: float) -> void:
-	# Une amorce = un APPUI bref (frein, Espace) ou un lever de pied, fait à grande vitesse.
-	# Elle reste armée un instant : on a le temps de braquer, et il n'est pas nécessaire de
-	# garder la touche enfoncée (le frein fait d'ailleurs chuter la vitesse).
-	# Frein à main (Espace) : tant qu'il est tenu, l'amorce reste armée (on peut le tenir et
-	# braquer ensuite). Un simple appui est aussi capté par _input, même plus court qu'une image
-	# physique, donc rien ne se perd.
+## Vitesse de rotation maximale du volant, en tenant compte du grip (un peu plus vive quand il est bas).
+func _rotation_max(manoeuvre: float) -> float:
+	return vitesse_rotation_circuit * facteur_rotation * manoeuvre * lerpf(facteur_rotation_derapage, 1.0, _grip)
+
+
+## L'unique variable : le grip de l'arrière. Les appuis le font chuter, le temps le fait remonter.
+func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 	var appui := _appui_en_attente or Input.is_action_just_pressed("freiner") or Input.is_action_just_pressed("deraper")
 	_appui_en_attente = false
-	var frein_a_main := Input.is_action_pressed("deraper")
 	var levee := _gaz_precedent > 0.5 and gaz < 0.1
 	_gaz_precedent = gaz
-	if (appui or levee or frein_a_main) and vitesse >= vitesse_min_derapage:
-		_amorce = delai_amorce
-	else:
-		_amorce = maxf(_amorce - delta, 0.0)
 
-	_temps_depuis_changement += delta
-	if absf(_volant) > 0.5 and signf(_volant) != _sens_braquage:
-		_sens_precedent = _sens_braquage
-		_sens_braquage = signf(_volant)
-		_temps_depuis_changement = 0.0
-
-	# Sur un circuit bosselé, la voiture décolle une fraction de seconde : on ne coupe donc le
-	# dérapage (ou l'amorce) qu'après un vrai saut, ou si on ralentit trop.
-	if is_on_floor():
-		_temps_en_l_air = 0.0
-	else:
-		_temps_en_l_air += delta
 	if vitesse < vitesse_min_derapage:
-		en_derapage = false
-		_amorce = 0.0
-		return
-	if _temps_en_l_air > 0.4:
-		en_derapage = false
-		return
-	if en_derapage:
-		return
-	if _amorce <= 0.0 or absf(_volant) < 0.35 or _temps_en_l_air > 0.15:
-		return
-
-	_amorce = 0.0
-	en_derapage = true
-	_sens_derapage = signf(_volant)
-	# Feinte : un coup de volant à l'opposé juste avant donne un angle de glisse plus ample.
-	_angle_tenu = 1.0
-	if _sens_precedent == -_sens_derapage and _temps_depuis_changement < 0.8:
-		_angle_tenu = bonus_feinte
-	# On repart de la courbure actuelle : pas de changement de direction à l'entrée.
-	_omega = _lacet if absf(_lacet) > 0.05 else _sens_derapage * 0.05
-	_sens_derapage = signf(_omega)
-	_glisse = clampf(angle_difference(_cap_trajectoire, _cap), -0.2, 0.2)
-	_t_derapage = 0.0
-
-
-## Dérapage « sur rail » : la trajectoire garde sa courbure, que le volant règle.
-## - volant dans le sens du virage : la courbure se serre ;
-## - volant au neutre : on garde la courbure (elle s'ouvre doucement sous les gaz, plus vite sans) ;
-## - contre-braquage : la courbure s'ouvre, le bolide se redresse, et si on continue à
-##   contre-braquer il repart de l'autre côté, sans saut ;
-## - l'angle de glisse (le nez en travers) suit la courbure : droit = pas de glisse = fin du dérapage.
-func _piloter_derapage(volant: float, manoeuvre: float, delta: float) -> void:
-	var rotation_max := vitesse_rotation_circuit * facteur_rotation * facteur_rotation_derapage * manoeuvre
-	var brut := Input.get_axis("droite", "gauche")  # volant avant lissage : détecte le « lâché »
-	if absf(brut) > 0.1:
-		# Le volant fixe la courbure visée ; elle change progressivement (jamais d'un coup).
-		_omega = move_toward(_omega, volant * rotation_max, variation_courbure * delta)
+		# Trop lent : le grip revient, et rien ne peut le faire chuter.
+		_grip = minf(_grip + 3.0 * delta, 1.0)
 	else:
-		# Volant lâché : le bolide reste planté, la courbure s'ouvre doucement.
+		if appui:
+			_grip = maxf(_grip - impulsion_appui, 0.05)
+		if levee:
+			_grip = maxf(_grip - impulsion_levee, 0.05)
+		var plancher := 1.0
+		if Input.is_action_pressed("deraper"):
+			plancher = grip_frein_a_main
+		elif Input.get_action_strength("freiner") > 0.3 and absf(brut) > 0.1:
+			plancher = grip_frein
+		if plancher < 1.0:
+			# Frein à main ou frein tenu : on maintient le grip bas.
+			_grip = move_toward(_grip, minf(plancher, _grip), 3.0 * delta)
+		else:
+			var rec := recuperation_en_virage if absf(brut) > 0.1 else recuperation
+			_grip = minf(_grip + rec * delta, 1.0)
+
+	en_derapage = _grip < seuil_derapage
+
+
+## Le virage, quel que soit le grip. La trajectoire tourne à la vitesse « _omega » (la courbure) ;
+## à plein grip elle suit le volant tout de suite, à grip bas elle change progressivement et se
+## maintient volant lâché. Le nez se met en travers d'autant plus que le grip est bas et que la
+## courbure est forte. Aucun changement brusque : tout est continu en fonction du grip.
+func _conduire_avec_grip(brut: float, manoeuvre: float, delta: float) -> void:
+	var rotation_max := _rotation_max(manoeuvre)
+	if absf(brut) > 0.1:
+		var cible := _volant * rotation_max
+		var pas := (cible - _omega) * (1.0 - exp(-inertie_lacet * delta))
+		var limite := lerpf(variation_courbure, variation_courbure_grip, smoothstep(0.4, 0.9, _grip)) * delta
+		_omega += clampf(pas, -limite, limite)
+	else:
+		# Volant lâché : on garde l'élan (grip bas) ou on redresse (plein grip).
 		var maintien := lerpf(maintien_courbure_sans_gaz, maintien_courbure_gaz, clampf(gaz, 0.0, 1.0))
+		maintien = lerpf(maintien, maintien_courbure_grip, smoothstep(0.5, 1.0, _grip))
 		_omega *= exp(-maintien * delta)
 	_cap_trajectoire += _omega * delta
 
 	if absf(_omega) > 0.04:
 		_sens_derapage = signf(_omega)
-	# Le nez se met en travers d'autant plus que la courbure est forte.
 	var charge := clampf(absf(_omega) / maxf(rotation_max, 0.1), 0.0, 1.0)
 	var angle_max_vitesse := lerpf(angle_entree_lent, angle_entree_vite, clampf(ratio_vitesse(), 0.0, 1.0))
-	var angle := minf(charge * angle_max_vitesse * _angle_tenu, angle_glisse_max)
-	if Input.get_action_strength("freiner") > 0.3:
-		angle = minf(angle * 1.15, angle_glisse_max)  # freiner en dérapage déstabilise l'arrière
-	_t_derapage += delta
-	var progression := smoothstep(0.0, 1.0, _t_derapage / duree_transition)
-	_glisse = lerpf(_glisse, _sens_derapage * angle * progression, 1.0 - exp(-reactivite_glisse * delta))
+	var angle := charge * angle_max_vitesse * (1.0 - smoothstep(0.2, 1.0, _grip))
+	if en_derapage and Input.get_action_strength("freiner") > 0.3:
+		angle *= 1.15  # freiner en dérapage déstabilise l'arrière
+	angle = minf(angle, angle_glisse_max)
+	_glisse = lerpf(_glisse, _sens_derapage * angle, 1.0 - exp(-reactivite_glisse * delta))
 	_cap = _cap_trajectoire + _glisse
 
-	vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * absf(_glisse) / angle_glisse_max * delta, 0.0)
-	jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
-
-	if absf(_glisse) < angle_sortie and absf(volant) < 0.15:
-		en_derapage = false
-		_lacet = 0.0
+	if en_derapage:
+		vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * absf(_glisse) / angle_glisse_max * delta, 0.0)
+		jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
 
 
 func _avancer_tout_droit(delta: float) -> void:
@@ -493,6 +450,9 @@ func _gerer_chocs(avant: Vector3) -> void:
 			if le_long.length() > 0.1:
 				_cap = atan2(-le_long.x, -le_long.z)
 				_cap_trajectoire = _cap
+				_glisse = 0.0
+				_omega = 0.0
+				_grip = 1.0
 				en_derapage = false
 	if touche and _contact_mur:
 		# Toujours collé à l'obstacle : on ne peut pas aller plus vite que ce
@@ -545,8 +505,10 @@ func _reapparaitre() -> void:
 	_cap = rotation.y
 	_cap_trajectoire = _cap
 	en_derapage = false
+	_grip = 1.0
+	_glisse = 0.0
+	_omega = 0.0
 	_volant = 0.0
-	_lacet = 0.0
 	velocity = Vector3.ZERO
 	vitesse = vitesse_max * 0.4
 	teleporte.emit(global_position - ancienne)
@@ -645,8 +607,10 @@ func _recommencer() -> void:
 	_cap = rotation.y
 	_cap_trajectoire = _cap
 	en_derapage = false
+	_grip = 1.0
+	_glisse = 0.0
+	_omega = 0.0
 	_volant = 0.0
-	_lacet = 0.0
 	velocity = Vector3.ZERO
 	vitesse = 0.0
 	jauge_boost = jauge_max
