@@ -80,19 +80,18 @@ signal atterrissage(force: float)
 @export var angle_entree_lent := 0.35  ## radians : angle visé à l'entrée du dérapage, à basse vitesse
 @export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
 @export var bonus_feinte := 1.3  ## entrée plus ample si on a braqué à l'opposé juste avant (feinte)
-@export var delai_levee_pied := 0.6  ## secondes pendant lesquelles lever le pied compte comme « amorce »
+@export var delai_amorce := 0.7  ## secondes pendant lesquelles un appui (frein, Espace) ou un lever de pied reste « armé » : on peut braquer juste après
 @export var angle_glisse_max := 1.0  ## radians : angle maximum
 @export var poussee_glisse := 1.1  ## rad/s : braquer dans le sens de la glisse l'augmente
-@export var rappel_glisse := 0.35  ## rad/s : contre-braquer réduit un peu l'angle (sans jamais sortir du dérapage)
-@export var angle_rail_min := 0.3  ## radians : angle plancher quand on contre-braque
+@export var rappel_glisse := 1.2  ## rad/s : contre-braquer ramène le bolide vers la ligne droite
+@export var angle_bascule := 0.15  ## radians : quasi droit ; si on contre-braque encore, on bascule de l'autre côté
 @export var acceleration_laterale := 42.0  ## m/s² : force de l'arc en dérapage (arc = ce chiffre ÷ vitesse)
 @export var effet_volant_rail := 0.7  ## de combien le volant resserre (+) ou élargit (−) l'arc : 0.5 = ±50 %
 @export var redressement_gaz := 0.12  ## rad/s : sous les gaz, volant au neutre, la glisse se réduit
 @export var redressement_sans_gaz := 0.35  ## idem sans les gaz : lever le pied aide à redresser
 @export var angle_sortie := 0.12  ## radians : sous cet angle, on a retrouvé l'adhérence
 @export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
-@export var seuil_contre_braquage := 0.7  ## braquage inverse qui enchaîne sur l'autre côté
-@export var delai_contre_braquage := 0.3  ## secondes à tenir ce braquage inverse (les petits coups de volant ne comptent pas)
+@export var seuil_contre_braquage := 0.3  ## braquage à l'opposé à partir duquel on considère qu'on contre-braque
 @export var adherence_normale := 9.0  ## hors dérapage la trajectoire rattrape vite le nez
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 @export var recharge_boost_derapage := 14.0  ## jauge gagnée par seconde de dérapage
@@ -120,10 +119,10 @@ var _cap_trajectoire := 0.0  # direction dans laquelle on se déplace vraiment
 var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à gauche)
 var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
-var _temps_contre := 0.0  # temps passé à braquer à l'opposé de la glisse
 var _angle_tenu := 0.0  # angle de glisse visé (sans lissage)
 var _t_derapage := 0.0  # temps écoulé depuis le début du dérapage
-var _temps_depuis_gaz := 0.0
+var _amorce := 0.0  # temps restant pendant lequel l'amorce du dérapage est armée
+var _gaz_precedent := 0.0
 var _sens_braquage := 0.0  # dernier côté braqué franchement (pour la feinte)
 var _sens_precedent := 0.0
 var _temps_depuis_changement := 9.0
@@ -336,11 +335,17 @@ func _conduire(delta: float) -> void:
 ## vitesse, on braque franchement tout en lâchant le gaz (ou en freinant, ou avec la
 ## touche « deraper »). Braquer seul, sans amorce, ne fait jamais déraper.
 func _mettre_a_jour_derapage(delta: float) -> void:
-	var frein := Input.get_action_strength("freiner")
-	if gaz > 0.5:
-		_temps_depuis_gaz = 0.0
+	# Une amorce = un APPUI bref (frein, Espace) ou un lever de pied, fait à grande vitesse.
+	# Elle reste armée un instant : on a le temps de braquer, et il n'est pas nécessaire de
+	# garder la touche enfoncée (le frein fait d'ailleurs chuter la vitesse).
+	var appui := Input.is_action_just_pressed("freiner") or Input.is_action_just_pressed("deraper")
+	var levee := _gaz_precedent > 0.5 and gaz < 0.1
+	_gaz_precedent = gaz
+	if (appui or levee) and vitesse >= vitesse_entree_derapage:
+		_amorce = delai_amorce
 	else:
-		_temps_depuis_gaz += delta
+		_amorce = maxf(_amorce - delta, 0.0)
+
 	_temps_depuis_changement += delta
 	if absf(_volant) > 0.5 and signf(_volant) != _sens_braquage:
 		_sens_precedent = _sens_braquage
@@ -349,15 +354,14 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 
 	if not is_on_floor() or vitesse < vitesse_min_derapage * 0.8:
 		en_derapage = false
+		_amorce = 0.0
 		return
 	if en_derapage:
 		return
-
-	var levee := gaz < 0.1 and _temps_depuis_gaz < delai_levee_pied
-	var amorce := Input.is_action_pressed("deraper") or frein > 0.3 or levee
-	if not (amorce and absf(_volant) > 0.35 and vitesse >= vitesse_entree_derapage):
+	if _amorce <= 0.0 or absf(_volant) < 0.35:
 		return
 
+	_amorce = 0.0
 	en_derapage = true
 	_sens_derapage = signf(_volant)
 	var angle := lerpf(angle_entree_lent, angle_entree_vite, clampf(ratio_vitesse(), 0.0, 1.0))
@@ -368,7 +372,6 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 	# On part de la glisse actuelle (quasi nulle) : l'angle monte progressivement (voir _piloter_derapage).
 	_glisse = clampf(angle_difference(_cap_trajectoire, _cap), -0.2, 0.2)
 	_t_derapage = 0.0
-	_temps_contre = 0.0
 	_lacet = 0.0
 
 
@@ -379,15 +382,6 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 ## - contre-braquer : l'arc s'élargit ; en tenant franchement, on bascule de l'autre côté.
 func _piloter_derapage(volant: float, _manoeuvre: float, delta: float) -> void:
 	var relatif := volant * _sens_derapage  # + = dans le sens de la glisse, - = contre
-	if relatif < -seuil_contre_braquage:
-		_temps_contre += delta
-		if _temps_contre > delai_contre_braquage:
-			_sens_derapage = -_sens_derapage
-			_temps_contre = 0.0
-			relatif = -relatif
-			_glisse = -_glisse * 0.5
-	else:
-		_temps_contre = 0.0
 
 	var angle := _angle_tenu
 	if relatif > 0.1:
@@ -396,12 +390,19 @@ func _piloter_derapage(volant: float, _manoeuvre: float, delta: float) -> void:
 		if angle < angle_vise:
 			angle = minf(angle + relatif * poussee_glisse * delta, angle_vise)
 	elif relatif < -0.1:
-		angle = maxf(angle - -relatif * rappel_glisse * delta, minf(angle, angle_rail_min))
+		# Contre-braquer redresse le bolide vers la ligne droite : pas de saut d'un côté à l'autre.
+		angle -= -relatif * rappel_glisse * delta
 	else:
 		angle -= lerpf(redressement_sans_gaz, redressement_gaz, clampf(gaz, 0.0, 1.0)) * delta
 	if Input.get_action_strength("freiner") > 0.3:
 		angle += 0.2 * delta  # freiner en dérapage déstabilise l'arrière
 	angle = clampf(angle, 0.0, angle_glisse_max)
+	# Quasi droit et on contre-braque encore (en continu) : on bascule en dérapage de l'autre côté.
+	if angle < angle_bascule and relatif < -seuil_contre_braquage:
+		_sens_derapage = -_sens_derapage
+		relatif = -relatif
+		angle = angle_bascule
+		_t_derapage = 0.0  # la glisse réelle repasse par zéro toute seule (pas de saut)
 	_angle_tenu = angle
 
 	# Transition : l'arrière se déleste progressivement (angle et arc montent ensemble).
@@ -419,7 +420,7 @@ func _piloter_derapage(volant: float, _manoeuvre: float, delta: float) -> void:
 	vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * absf(_glisse) / angle_glisse_max * delta, 0.0)
 	jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
 
-	if angle < angle_sortie and relatif <= 0.1:
+	if angle < angle_sortie and relatif > -seuil_contre_braquage:
 		en_derapage = false
 		_lacet = 0.0
 
