@@ -65,17 +65,17 @@ signal atterrissage(force: float)
 @export var perte_choc := 0.75  ## part de la vitesse perdue en percutant un bloc de face
 
 @export_group("Poids et direction (vrais circuits)")
-@export var raideur_volant := 4.5  ## plus c'est petit, plus le volant met de temps à tourner
-@export var inertie_lacet := 3.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
-@export var facteur_rotation := 0.8  ## multiplie la vitesse de rotation (1 = comme avant)
-@export var sous_virage_max := 0.4  ## part de rotation perdue quand les pneus avant saturent
+@export var raideur_volant := 9.0  ## plus c'est petit, plus le volant met de temps à tourner
+@export var inertie_lacet := 7.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
+@export var facteur_rotation := 1.0  ## multiplie la vitesse de rotation (1 = comme avant)
+@export var sous_virage_max := 0.25  ## part de rotation perdue quand les pneus avant saturent
 
 @export_group("Dérapage (vrais circuits)")
 ## Progressif : en virage rapide le bolide sous-vire d'abord (« saturation »), puis
 ## l'arrière décroche. Une fois en dérapage, il reste planté : lâcher le volant garde
 ## l'élan, garder les gaz le redresse tout seul, contre-braquer le redresse plus vite.
 @export var vitesse_min_derapage := 22.0  ## en dessous, impossible de déraper (m/s)
-@export var seuil_saturation := 0.55  ## braquage × vitesse au-dessus duquel les pneus saturent
+@export var seuil_saturation := 0.65  ## braquage × vitesse au-dessus duquel les pneus saturent
 @export var vitesse_saturation := 1.8  ## rapidité de la montée de saturation (1.8 ≈ 1 s en virage serré à vitesse max)
 @export var angle_entree_derapage := 0.28  ## radians : angle de glisse au décrochage
 @export var angle_glisse_max := 0.75  ## radians : angle maximum
