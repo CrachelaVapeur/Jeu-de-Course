@@ -68,7 +68,7 @@ signal atterrissage(force: float)
 @export var raideur_volant := 9.0  ## plus c'est petit, plus le volant met de temps à tourner
 @export var inertie_lacet := 7.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
 @export var facteur_rotation := 1.0  ## multiplie la vitesse de rotation (1 = comme avant)
-@export var rigidite_haute_vitesse := 0.5  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
+@export var rigidite_haute_vitesse := 0.0  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
 
 @export_group("Dérapage (vrais circuits)")
 ## Comme OutRun : on déclenche le dérapage en levant le pied ou en freinant en virage, à
