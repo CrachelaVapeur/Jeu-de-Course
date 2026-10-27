@@ -68,7 +68,7 @@ signal atterrissage(force: float)
 @export var raideur_volant := 9.0  ## plus c'est petit, plus le volant met de temps à tourner
 @export var inertie_lacet := 7.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
 @export var facteur_rotation := 1.0  ## multiplie la vitesse de rotation (1 = comme avant)
-@export var rigidite_haute_vitesse := 0.7  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
+@export var rigidite_haute_vitesse := 0.5  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
 
 @export_group("Dérapage (vrais circuits)")
 ## Comme OutRun : on déclenche le dérapage en levant le pied ou en freinant en virage, à
@@ -76,6 +76,7 @@ signal atterrissage(force: float)
 ## légère : le bolide est « sur rail » et le volant règle la trajectoire.
 @export var vitesse_min_derapage := 22.0  ## en dessous, le dérapage s'arrête (m/s)
 @export var vitesse_entree_derapage := 69.0  ## m/s (250 km/h) : en dessous, impossible de déclencher un dérapage
+@export var duree_transition := 0.6  ## secondes pour passer de la conduite normale au dérapage complet (l'arrière se déleste progressivement)
 @export var angle_entree_lent := 0.35  ## radians : angle visé à l'entrée du dérapage, à basse vitesse
 @export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
 @export var bonus_feinte := 1.3  ## entrée plus ample si on a braqué à l'opposé juste avant (feinte)
@@ -121,6 +122,7 @@ var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
 var _temps_contre := 0.0  # temps passé à braquer à l'opposé de la glisse
 var _angle_tenu := 0.0  # angle de glisse visé (sans lissage)
+var _t_derapage := 0.0  # temps écoulé depuis le début du dérapage
 var _temps_depuis_gaz := 0.0
 var _sens_braquage := 0.0  # dernier côté braqué franchement (pour la feinte)
 var _sens_precedent := 0.0
@@ -318,7 +320,7 @@ func _conduire(delta: float) -> void:
 			# Sous-virage : plus les pneus saturent, moins le nez suit le volant.
 			var cible := _volant * vitesse_rotation_circuit * facteur_rotation * maniabilite * controle
 			# Direction lourde à grande vitesse : on ne tourne serré qu'en dérapant.
-			cible *= 1.0 - rigidite_haute_vitesse * smoothstep(0.35, 0.95, ratio_vitesse())
+			cible *= 1.0 - rigidite_haute_vitesse * smoothstep(0.5, 1.0, ratio_vitesse())
 			_lacet = lerpf(_lacet, cible, 1.0 - exp(-inertie_lacet * delta))
 			_cap += _lacet * delta
 			if absf(angle_difference(_cap_trajectoire, _cap)) > 0.25:
@@ -363,7 +365,9 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 	if _sens_precedent == -_sens_derapage and _temps_depuis_changement < 0.8:
 		angle = minf(angle * bonus_feinte, angle_glisse_max)
 	_angle_tenu = angle
-	_glisse = _sens_derapage * angle * 0.45
+	# On part de la glisse actuelle (quasi nulle) : l'angle monte progressivement (voir _piloter_derapage).
+	_glisse = clampf(angle_difference(_cap_trajectoire, _cap), -0.2, 0.2)
+	_t_derapage = 0.0
 	_temps_contre = 0.0
 	_lacet = 0.0
 
@@ -400,12 +404,15 @@ func _piloter_derapage(volant: float, _manoeuvre: float, delta: float) -> void:
 	angle = clampf(angle, 0.0, angle_glisse_max)
 	_angle_tenu = angle
 
-	_glisse = lerpf(_glisse, _sens_derapage * angle, 1.0 - exp(-reactivite_glisse * delta))
+	# Transition : l'arrière se déleste progressivement (angle et arc montent ensemble).
+	_t_derapage += delta
+	var progression := smoothstep(0.0, 1.0, _t_derapage / duree_transition)
+	_glisse = lerpf(_glisse, _sens_derapage * angle * progression, 1.0 - exp(-reactivite_glisse * delta))
 
 	# L'arc : une accélération latérale (donc un arc plus large à haute vitesse), réglée par le volant.
 	var arc := _sens_derapage * acceleration_laterale / maxf(vitesse, 25.0)
 	arc *= 1.0 + effet_volant_rail * clampf(relatif, -1.0, 1.0)
-	arc *= clampf(angle / 0.5, 0.6, 1.3)
+	arc *= clampf(angle / 0.5, 0.6, 1.3) * lerpf(0.4, 1.0, progression)
 	_cap_trajectoire += arc * delta
 	_cap = _cap_trajectoire + _glisse
 
