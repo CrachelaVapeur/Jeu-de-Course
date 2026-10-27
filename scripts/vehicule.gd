@@ -74,8 +74,7 @@ signal atterrissage(force: float)
 ## Comme OutRun : on déclenche le dérapage en levant le pied ou en freinant en virage, à
 ## grande vitesse seulement. Hors dérapage la direction est lourde ; en dérapage elle devient
 ## légère : le bolide est « sur rail » et le volant règle la trajectoire.
-@export var vitesse_min_derapage := 22.0  ## en dessous, le dérapage s'arrête (m/s)
-@export var vitesse_entree_derapage := 69.0  ## m/s (250 km/h) : en dessous, impossible de déclencher un dérapage
+@export var vitesse_min_derapage := 27.8  ## m/s (100 km/h) : en dessous, impossible d'amorcer un dérapage, et s'il est en cours il s'arrête
 @export var duree_transition := 0.6  ## secondes pour passer de la conduite normale au dérapage complet (l'arrière se déleste progressivement)
 @export var angle_entree_lent := 0.35  ## radians : angle visé à l'entrée du dérapage, à basse vitesse
 @export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
@@ -86,7 +85,7 @@ signal atterrissage(force: float)
 @export var rappel_glisse := 1.2  ## rad/s : contre-braquer ramène le bolide vers la ligne droite
 @export var angle_bascule := 0.15  ## radians : quasi droit ; si on contre-braque encore, on bascule de l'autre côté
 @export var acceleration_laterale := 42.0  ## m/s² : force de l'arc en dérapage (arc = ce chiffre ÷ vitesse)
-@export var effet_volant_rail := 0.7  ## de combien le volant resserre (+) ou élargit (−) l'arc : 0.5 = ±50 %
+@export var effet_volant_rail := 1.0  ## légèreté du volant en dérapage : 1 = aussi vif qu'en conduite normale, il resserre ou élargit l'arc
 @export var redressement_gaz := 0.12  ## rad/s : sous les gaz, volant au neutre, la glisse se réduit
 @export var redressement_sans_gaz := 0.35  ## idem sans les gaz : lever le pied aide à redresser
 @export var angle_sortie := 0.12  ## radians : sous cet angle, on a retrouvé l'adhérence
@@ -341,7 +340,7 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 	var appui := Input.is_action_just_pressed("freiner") or Input.is_action_just_pressed("deraper")
 	var levee := _gaz_precedent > 0.5 and gaz < 0.1
 	_gaz_precedent = gaz
-	if (appui or levee) and vitesse >= vitesse_entree_derapage:
+	if (appui or levee) and vitesse >= vitesse_min_derapage:
 		_amorce = delai_amorce
 	else:
 		_amorce = maxf(_amorce - delta, 0.0)
@@ -352,7 +351,7 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 		_sens_braquage = signf(_volant)
 		_temps_depuis_changement = 0.0
 
-	if not is_on_floor() or vitesse < vitesse_min_derapage * 0.8:
+	if not is_on_floor() or vitesse < vitesse_min_derapage:
 		en_derapage = false
 		_amorce = 0.0
 		return
@@ -380,7 +379,7 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 ## - volant au neutre : l'arc est stable ; sous les gaz l'angle diminue très lentement ;
 ## - braquer dans le sens de la glisse : l'arc se resserre (et l'angle grandit un peu) ;
 ## - contre-braquer : l'arc s'élargit ; en tenant franchement, on bascule de l'autre côté.
-func _piloter_derapage(volant: float, _manoeuvre: float, delta: float) -> void:
+func _piloter_derapage(volant: float, manoeuvre: float, delta: float) -> void:
 	var relatif := volant * _sens_derapage  # + = dans le sens de la glisse, - = contre
 
 	var angle := _angle_tenu
@@ -412,8 +411,10 @@ func _piloter_derapage(volant: float, _manoeuvre: float, delta: float) -> void:
 
 	# L'arc : une accélération latérale (donc un arc plus large à haute vitesse), réglée par le volant.
 	var arc := _sens_derapage * acceleration_laterale / maxf(vitesse, 25.0)
-	arc *= 1.0 + effet_volant_rail * clampf(relatif, -1.0, 1.0)
 	arc *= clampf(angle / 0.5, 0.6, 1.3) * lerpf(0.4, 1.0, progression)
+	# Le volant agit directement sur la trajectoire, aussi vif qu'en conduite normale :
+	# braquer dans le sens de la glisse resserre l'arc, braquer à l'opposé l'élargit.
+	arc += volant * vitesse_rotation_circuit * facteur_rotation * manoeuvre * effet_volant_rail
 	_cap_trajectoire += arc * delta
 	_cap = _cap_trajectoire + _glisse
 
