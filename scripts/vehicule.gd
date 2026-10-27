@@ -122,6 +122,8 @@ var _angle_tenu := 1.0  # multiplicateur d'angle de glisse (feinte)
 var _ignorer_boost := false  # vrai après une perte de focus, jusqu'au relâchement de la touche
 var _omega := 0.0  # vitesse de rotation de la trajectoire en dérapage (rad/s) : la courbure
 var _t_derapage := 0.0  # temps écoulé depuis le début du dérapage
+var _appui_en_attente := false  # un appui frein/Espace reçu, pas encore pris en compte par la physique
+var _temps_en_l_air := 0.0
 var _amorce := 0.0  # temps restant pendant lequel l'amorce du dérapage est armée
 var _gaz_precedent := 0.0
 var _sens_braquage := 0.0  # dernier côté braqué franchement (pour la feinte)
@@ -239,6 +241,11 @@ func _roues_arriere_pivots() -> Array[Node3D]:
 	return pivots
 
 
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("deraper") or event.is_action_pressed("freiner"):
+		_appui_en_attente = true
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		_ignorer_boost = true
@@ -348,10 +355,15 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 	# Une amorce = un APPUI bref (frein, Espace) ou un lever de pied, fait à grande vitesse.
 	# Elle reste armée un instant : on a le temps de braquer, et il n'est pas nécessaire de
 	# garder la touche enfoncée (le frein fait d'ailleurs chuter la vitesse).
-	var appui := Input.is_action_just_pressed("freiner") or Input.is_action_just_pressed("deraper")
+	# Frein à main (Espace) : tant qu'il est tenu, l'amorce reste armée (on peut le tenir et
+	# braquer ensuite). Un simple appui est aussi capté par _input, même plus court qu'une image
+	# physique, donc rien ne se perd.
+	var appui := _appui_en_attente or Input.is_action_just_pressed("freiner") or Input.is_action_just_pressed("deraper")
+	_appui_en_attente = false
+	var frein_a_main := Input.is_action_pressed("deraper")
 	var levee := _gaz_precedent > 0.5 and gaz < 0.1
 	_gaz_precedent = gaz
-	if (appui or levee) and vitesse >= vitesse_min_derapage:
+	if (appui or levee or frein_a_main) and vitesse >= vitesse_min_derapage:
 		_amorce = delai_amorce
 	else:
 		_amorce = maxf(_amorce - delta, 0.0)
@@ -362,13 +374,22 @@ func _mettre_a_jour_derapage(delta: float) -> void:
 		_sens_braquage = signf(_volant)
 		_temps_depuis_changement = 0.0
 
-	if not is_on_floor() or vitesse < vitesse_min_derapage:
+	# Sur un circuit bosselé, la voiture décolle une fraction de seconde : on ne coupe donc le
+	# dérapage (ou l'amorce) qu'après un vrai saut, ou si on ralentit trop.
+	if is_on_floor():
+		_temps_en_l_air = 0.0
+	else:
+		_temps_en_l_air += delta
+	if vitesse < vitesse_min_derapage:
 		en_derapage = false
 		_amorce = 0.0
 		return
+	if _temps_en_l_air > 0.4:
+		en_derapage = false
+		return
 	if en_derapage:
 		return
-	if _amorce <= 0.0 or absf(_volant) < 0.35:
+	if _amorce <= 0.0 or absf(_volant) < 0.35 or _temps_en_l_air > 0.15:
 		return
 
 	_amorce = 0.0
