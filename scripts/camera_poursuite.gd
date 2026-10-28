@@ -28,7 +28,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	# 1. La caméra suit l'angle du bolide avec un peu de retard (plus doux).
-	_cap_camera = lerp_angle(_cap_camera, cible.rotation.y, 1.0 - exp(-5.0 * delta))
+	_cap_camera = lerp_angle(_cap_camera, cible.cap_camera(), 1.0 - exp(-5.0 * delta))
 	var arriere := Vector3(sin(_cap_camera), 0.0, cos(_cap_camera))
 
 	# 2. Quand on accélère fort, la caméra recule un peu puis rattrape.
