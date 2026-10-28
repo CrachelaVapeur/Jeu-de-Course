@@ -37,14 +37,17 @@ signal atterrissage(force: float)
 
 @export_group("Boost")
 @export var jauge_max := 100.0
+@export var boost_infini := true  ## phase de test des voitures : pas de jauge, boost illimité
 @export var consommation := 30.0  ## par seconde de boost
 @export var recharge := 10.0  ## par seconde sans boost
 @export var attaque_distorsion := 8.0  ## vitesse à laquelle l'effet de boost s'installe
-@export var relachement_distorsion := 2.5  ## vitesse à laquelle il s'efface après le boost
+@export var relachement_distorsion := 5.0  ## vitesse à laquelle il s'efface après le boost
 ## Secondes pour que le boost donne toute sa poussée : il démarre doucement,
 ## puis pousse de plus en plus fort (une courbe qui se creuse, pas un coup sec).
 ## 0 = toute la poussée d'un coup.
 @export var duree_montee_boost := 0.0
+## Après le boost, vitesse perdue par seconde pour revenir à la vitesse max (plus c'est grand, plus le boost s'arrête net).
+@export var freinage_apres_boost := 48.0
 
 @export_group("Apparence")
 ## Matière (toon) appliquée au modèle 3D. Les couleurs viennent des couleurs de sommets du modèle.
@@ -65,7 +68,43 @@ signal atterrissage(force: float)
 @export var hauteur_chute := -30.0  ## en dessous de cette altitude, on réapparaît
 @export var perte_choc := 0.75  ## part de la vitesse perdue en percutant un bloc de face
 
+@export_group("Poids et direction (vrais circuits)")
+@export var raideur_volant := 9.0  ## plus c'est petit, plus le volant met de temps à tourner
+@export var inertie_lacet := 7.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
+@export var facteur_rotation := 1.0  ## multiplie la vitesse de rotation (1 = comme avant)
+@export var rigidite_haute_vitesse := 0.0  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
+
+@export_group("Dérapage (vrais circuits)")
+## UNE seule variable pilote tout : le « grip » de l'arrière (1 = pleine adhérence, 0 = il glisse).
+## - un appui sur frein / Espace, ou lâcher le gaz, fait chuter le grip d'un coup (au-dessus de la
+##   vitesse minimale) ; tenir Espace le maintient bas ;
+## - le grip remonte tout seul ; bien plus lentement tant qu'on braque (pneus saturés) ;
+## - plus le grip est bas, plus le nez se met en travers, plus la courbure est « tenue » (volant
+##   lâché = on garde l'élan) et plus elle change progressivement (jamais de saut de côté) ;
+## - en dessous de « seuil_derapage », on est « en dérapage » (fumée, recharge de boost).
+@export var vitesse_min_derapage := 27.8  ## m/s (100 km/h) : en dessous, le grip revient et rien ne peut le faire chuter
+@export var seuil_derapage := 0.6  ## grip en dessous duquel on est « en dérapage »
+@export var impulsion_appui := 0.8  ## grip perdu d'un coup à un appui sur frein ou Espace
+@export var impulsion_levee := 0.5  ## grip perdu d'un coup quand on lâche le gaz
+@export var grip_frein_a_main := 0.2  ## grip maintenu tant qu'Espace est tenu
+@export var grip_frein := 0.5  ## grip maintenu tant que le frein est tenu en virage
+@export var recuperation := 0.45  ## par seconde : le grip remonte quand le volant est au neutre
+@export var recuperation_en_virage := 0.05  ## par seconde : idem tant qu'on braque (le dérapage dure le temps du virage)
+@export var angle_entree_lent := 0.35  ## radians : angle de glisse à pleine courbure, à basse vitesse
+@export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
+@export var angle_glisse_max := 1.0  ## radians : angle maximum
+@export var facteur_rotation_derapage := 1.15  ## le volant tourne un peu plus fort quand le grip est bas
+@export var variation_courbure := 3.0  ## rad/s² : vitesse max de changement de courbure à grip nul (plus petit = plus progressif)
+@export var variation_courbure_grip := 20.0  ## idem à plein grip (conduite normale)
+@export var maintien_courbure_gaz := 0.35  ## par seconde : volant lâché, grip bas, sous gaz : la courbure s'ouvre lentement
+@export var maintien_courbure_sans_gaz := 1.0  ## idem sans les gaz : lever le pied aide à redresser
+@export var maintien_courbure_grip := 7.0  ## idem à plein grip : on redresse tout de suite
+@export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
+@export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
+@export var recharge_boost_derapage := 14.0  ## jauge gagnée par seconde de dérapage
+
 var vitesse := 0.0
+var en_derapage := false
 var jauge_boost := 100.0
 var en_boost := false
 var gaz := 0.0
@@ -82,7 +121,17 @@ const RAYON_ARRIERE := 0.42
 const ROTATION_VISUELLE_MAX := 28.0  # radians par seconde
 const BRAQUAGE_MAX := 0.45  # radians, roues avant
 
-var _cap := 0.0  # angle du bolide autour de l'axe vertical
+var _cap := 0.0  # angle du bolide autour de l'axe vertical (là où pointe le nez)
+var _cap_trajectoire := 0.0  # direction dans laquelle on se déplace vraiment
+var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à gauche)
+var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
+var _grip := 1.0  # adhérence de l'arrière : 1 = normale, 0 = glisse totale
+var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
+var _ignorer_boost := false  # vrai après une perte de focus, jusqu'au relâchement de la touche
+var _omega := 0.0  # vitesse de rotation de la trajectoire en dérapage (rad/s) : la courbure
+var _appui_en_attente := false  # un appui frein/Espace reçu, pas encore pris en compte par la physique
+var _gaz_precedent := 0.0
+var _volant := 0.0  # braquage lissé (-1..1) : le volant a du poids
 var _temps := 0.0
 var _contact_mur := false
 var _normale_sol := Vector3.UP
@@ -118,6 +167,7 @@ func _ready() -> void:
 	jauge_boost = jauge_max
 	_depart = global_transform
 	_cap = rotation.y
+	_cap_trajectoire = _cap
 	# Le modèle importé arrive avec une matière standard : on la remplace par la matière cartoon.
 	for noeud in $Carrosserie/Modele.find_children("*", "MeshInstance3D", true, false):
 		(noeud as MeshInstance3D).material_override = matiere_modele
@@ -130,6 +180,76 @@ func _ready() -> void:
 	for nom in ["RoueArG", "RoueArD"]:
 		var pivot := $Carrosserie/Modele.find_child(nom, true, false) as Node3D
 		_roues_arriere.append(pivot.get_child(0) as Node3D)
+	_creer_fumees()
+
+
+## Nuages de fumée aux deux roues arrière, actifs pendant un dérapage.
+## Ils restent dans le monde (ils ne suivent pas le bolide) : ça dessine une traînée.
+func _creer_fumees() -> void:
+	var matiere := StandardMaterial3D.new()
+	matiere.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	matiere.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	matiere.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	matiere.vertex_color_use_as_albedo = true
+	matiere.albedo_color = Color.WHITE
+	matiere.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	# Petite texture ronde de 16×16 pixels, nette (look PS1) : un rond en pixels, pas un carré.
+	var rond := Gradient.new()
+	rond.colors = PackedColorArray([Color.WHITE, Color.WHITE, Color(1, 1, 1, 0)])
+	rond.offsets = PackedFloat32Array([0.0, 0.55, 0.95])
+	var texture_ronde := GradientTexture2D.new()
+	texture_ronde.gradient = rond
+	texture_ronde.fill = GradientTexture2D.FILL_RADIAL
+	texture_ronde.fill_from = Vector2(0.5, 0.5)
+	texture_ronde.fill_to = Vector2(1.0, 0.5)
+	texture_ronde.width = 16
+	texture_ronde.height = 16
+	matiere.albedo_texture = texture_ronde
+	var maillage := QuadMesh.new()
+	maillage.size = Vector2.ONE
+	maillage.material = matiere
+	var degrade := Gradient.new()
+	degrade.colors = PackedColorArray([Color(0.95, 0.95, 1.0, 0.0), Color(0.9, 0.92, 1.0, 0.75), Color(0.7, 0.72, 0.85, 0.0)])
+	degrade.offsets = PackedFloat32Array([0.0, 0.15, 1.0])
+	var croissance := Curve.new()
+	croissance.add_point(Vector2(0.0, 0.4))
+	croissance.add_point(Vector2(1.0, 1.0))
+	for pivot in _roues_arriere_pivots():
+		var nuage := CPUParticles3D.new()
+		nuage.local_coords = false
+		nuage.emitting = false
+		nuage.amount = 56
+		nuage.lifetime = 0.9
+		nuage.mesh = maillage
+		nuage.direction = Vector3(0.0, 1.0, 0.0)
+		nuage.spread = 35.0
+		nuage.initial_velocity_min = 0.6
+		nuage.initial_velocity_max = 2.2
+		nuage.gravity = Vector3(0.0, 0.4, 0.0)
+		nuage.scale_amount_min = 1.4
+		nuage.scale_amount_max = 2.6
+		nuage.scale_amount_curve = croissance
+		nuage.color_ramp = degrade
+		nuage.position = to_local(pivot.global_position) * Vector3(1.0, 0.0, 1.0) + Vector3(0.0, 0.15, 0.0)
+		add_child(nuage)
+		_fumees.append(nuage)
+
+
+func _roues_arriere_pivots() -> Array[Node3D]:
+	var pivots: Array[Node3D] = []
+	for nom in ["RoueArG", "RoueArD"]:
+		pivots.append($Carrosserie/Modele.find_child(nom, true, false) as Node3D)
+	return pivots
+
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("deraper") or event.is_action_pressed("freiner"):
+		_appui_en_attente = true
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_ignorer_boost = true
 
 
 func _physics_process(delta: float) -> void:
@@ -146,10 +266,18 @@ func _physics_process(delta: float) -> void:
 		_avancer_sur_le_relief(delta)
 		_surveiller_chute(delta)
 	_animer(delta)
+	for nuage in _fumees:
+		nuage.emitting = en_derapage and is_on_floor()
 
 
 ## Combien on va vite par rapport à la vitesse max normale (1.0 = vitesse max,
 ## plus de 2.0 en plein boost).
+func cap_camera() -> float:
+	# Pendant un dérapage, la caméra regarde surtout la trajectoire : on voit le
+	# bolide de travers (comme dans OutRun) au lieu de rester collé derrière son nez.
+	return _cap - _glisse * 0.75
+
+
 func ratio_vitesse() -> float:
 	return vitesse / vitesse_max
 
@@ -163,10 +291,15 @@ func _conduire(delta: float) -> void:
 	var frein := Input.get_action_strength("freiner")
 	var virage := Input.get_axis("droite", "gauche")
 
-	en_boost = Input.is_action_pressed("boost") and jauge_boost > 0.0
+	# Sécurité : si la fenêtre perd le focus pendant qu'on tient la touche, le jeu peut rater
+	# son relâchement. On ignore alors le boost jusqu'à ce qu'on lâche vraiment la touche.
+	if _ignorer_boost and not Input.is_action_pressed("boost"):
+		_ignorer_boost = false
+	en_boost = Input.is_action_pressed("boost") and not _ignorer_boost and (boost_infini or jauge_boost > 0.0)
 
 	if en_boost:
-		jauge_boost = maxf(jauge_boost - consommation * delta, 0.0)
+		if not boost_infini:
+			jauge_boost = maxf(jauge_boost - consommation * delta, 0.0)
 		montee_boost = minf(montee_boost + delta / duree_montee_boost, 1.0) if duree_montee_boost > 0.0 else 1.0
 		# La poussée grandit avec le carré de la montée : douce au début, très
 		# forte à la fin.
@@ -177,7 +310,7 @@ func _conduire(delta: float) -> void:
 		jauge_boost = minf(jauge_boost + recharge * delta, jauge_max)
 		if vitesse > vitesse_max:
 			# Après un boost, on redescend doucement : la vitesse « reste » un peu.
-			vitesse = move_toward(vitesse, vitesse_max, frottement * 3.0 * delta)
+			vitesse = move_toward(vitesse, vitesse_max, freinage_apres_boost * delta)
 		elif gaz > 0.0:
 			vitesse = move_toward(vitesse, vitesse_max * gaz, acceleration * delta)
 		else:
@@ -197,8 +330,79 @@ func _conduire(delta: float) -> void:
 			_cap = move_toward(_cap, 0.0, redressement * delta)
 	else:
 		var controle := 1.0 if is_on_floor() else controle_en_l_air
-		_cap += virage * vitesse_rotation_circuit * maniabilite * controle * delta
+		_volant = lerpf(_volant, virage, 1.0 - exp(-raideur_volant * delta))
+		_mettre_a_jour_grip(virage, maniabilite * controle, delta)
+		_conduire_avec_grip(virage, maniabilite * controle, delta)
 	rotation.y = _cap
+
+
+## Vitesse de rotation maximale du volant, en tenant compte du grip (un peu plus vive quand il est bas).
+func _rotation_max(manoeuvre: float) -> float:
+	return vitesse_rotation_circuit * facteur_rotation * manoeuvre * lerpf(facteur_rotation_derapage, 1.0, _grip)
+
+
+## L'unique variable : le grip de l'arrière. Les appuis le font chuter, le temps le fait remonter.
+func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
+	var appui := _appui_en_attente or Input.is_action_just_pressed("freiner") or Input.is_action_just_pressed("deraper")
+	_appui_en_attente = false
+	var levee := _gaz_precedent > 0.5 and gaz < 0.1
+	_gaz_precedent = gaz
+
+	if vitesse < vitesse_min_derapage:
+		# Trop lent : le grip revient, et rien ne peut le faire chuter.
+		_grip = minf(_grip + 3.0 * delta, 1.0)
+	else:
+		if appui:
+			_grip = maxf(_grip - impulsion_appui, 0.05)
+		if levee:
+			_grip = maxf(_grip - impulsion_levee, 0.05)
+		var plancher := 1.0
+		if Input.is_action_pressed("deraper"):
+			plancher = grip_frein_a_main
+		elif Input.get_action_strength("freiner") > 0.3 and absf(brut) > 0.1:
+			plancher = grip_frein
+		if plancher < 1.0:
+			# Frein à main ou frein tenu : on maintient le grip bas.
+			_grip = move_toward(_grip, minf(plancher, _grip), 3.0 * delta)
+		else:
+			var rec := recuperation_en_virage if absf(brut) > 0.1 else recuperation
+			_grip = minf(_grip + rec * delta, 1.0)
+
+	en_derapage = _grip < seuil_derapage
+
+
+## Le virage, quel que soit le grip. La trajectoire tourne à la vitesse « _omega » (la courbure) ;
+## à plein grip elle suit le volant tout de suite, à grip bas elle change progressivement et se
+## maintient volant lâché. Le nez se met en travers d'autant plus que le grip est bas et que la
+## courbure est forte. Aucun changement brusque : tout est continu en fonction du grip.
+func _conduire_avec_grip(brut: float, manoeuvre: float, delta: float) -> void:
+	var rotation_max := _rotation_max(manoeuvre)
+	if absf(brut) > 0.1:
+		var cible := _volant * rotation_max
+		var pas := (cible - _omega) * (1.0 - exp(-inertie_lacet * delta))
+		var limite := lerpf(variation_courbure, variation_courbure_grip, smoothstep(0.4, 0.9, _grip)) * delta
+		_omega += clampf(pas, -limite, limite)
+	else:
+		# Volant lâché : on garde l'élan (grip bas) ou on redresse (plein grip).
+		var maintien := lerpf(maintien_courbure_sans_gaz, maintien_courbure_gaz, clampf(gaz, 0.0, 1.0))
+		maintien = lerpf(maintien, maintien_courbure_grip, smoothstep(0.5, 1.0, _grip))
+		_omega *= exp(-maintien * delta)
+	_cap_trajectoire += _omega * delta
+
+	if absf(_omega) > 0.04:
+		_sens_derapage = signf(_omega)
+	var charge := clampf(absf(_omega) / maxf(rotation_max, 0.1), 0.0, 1.0)
+	var angle_max_vitesse := lerpf(angle_entree_lent, angle_entree_vite, clampf(ratio_vitesse(), 0.0, 1.0))
+	var angle := charge * angle_max_vitesse * (1.0 - smoothstep(0.2, 1.0, _grip))
+	if en_derapage and Input.get_action_strength("freiner") > 0.3:
+		angle *= 1.15  # freiner en dérapage déstabilise l'arrière
+	angle = minf(angle, angle_glisse_max)
+	_glisse = lerpf(_glisse, _sens_derapage * angle, 1.0 - exp(-reactivite_glisse * delta))
+	_cap = _cap_trajectoire + _glisse
+
+	if en_derapage:
+		vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * absf(_glisse) / angle_glisse_max * delta, 0.0)
+		jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
 
 
 func _avancer_tout_droit(delta: float) -> void:
@@ -207,7 +411,7 @@ func _avancer_tout_droit(delta: float) -> void:
 
 
 func _avancer_sur_le_relief(delta: float) -> void:
-	var avant := Vector3(-sin(_cap), 0.0, -cos(_cap))
+	var avant := Vector3(-sin(_cap_trajectoire), 0.0, -cos(_cap_trajectoire))
 	var en_l_air := not is_on_floor()
 
 	if not en_l_air:
@@ -248,6 +452,11 @@ func _gerer_chocs(avant: Vector3) -> void:
 			var le_long := avant - normale * avant.dot(normale)
 			if le_long.length() > 0.1:
 				_cap = atan2(-le_long.x, -le_long.z)
+				_cap_trajectoire = _cap
+				_glisse = 0.0
+				_omega = 0.0
+				_grip = 1.0
+				en_derapage = false
 	if touche and _contact_mur:
 		# Toujours collé à l'obstacle : on ne peut pas aller plus vite que ce
 		# qu'on avance vraiment (sinon le compteur s'affole contre un bloc).
@@ -297,6 +506,12 @@ func _reapparaitre() -> void:
 	var ancienne := global_position
 	global_transform = cible
 	_cap = rotation.y
+	_cap_trajectoire = _cap
+	en_derapage = false
+	_grip = 1.0
+	_glisse = 0.0
+	_omega = 0.0
+	_volant = 0.0
 	velocity = Vector3.ZERO
 	vitesse = vitesse_max * 0.4
 	teleporte.emit(global_position - ancienne)
@@ -360,8 +575,8 @@ func _animer(delta: float) -> void:
 
 	# Flammes latérales : de plus en plus longues avec la vitesse, énormes en boost.
 	var allure_flamme := clampf(ratio_vitesse(), 0.0, 1.0)
-	var longueur_laterale := pow(allure_flamme, 2.0) * 1.6 + (6.0 if en_boost else 0.0)
-	var largeur_laterale := 1.6 + (2.4 if en_boost else 0.0)
+	var longueur_laterale := pow(allure_flamme, 2.0) * 0.8 + (2.2 if en_boost else 0.0)
+	var largeur_laterale := 1.0 + (0.8 if en_boost else 0.0)
 	_longueur_laterale = lerpf(_longueur_laterale, longueur_laterale, lissage)
 	_largeur_laterale = lerpf(_largeur_laterale, largeur_laterale, lissage)
 	for flamme in _flammes_laterales:
@@ -393,6 +608,12 @@ func _recommencer() -> void:
 	var ancienne := global_position
 	global_transform = _depart
 	_cap = rotation.y
+	_cap_trajectoire = _cap
+	en_derapage = false
+	_grip = 1.0
+	_glisse = 0.0
+	_omega = 0.0
+	_volant = 0.0
 	velocity = Vector3.ZERO
 	vitesse = 0.0
 	jauge_boost = jauge_max
