@@ -37,6 +37,7 @@ signal atterrissage(force: float)
 
 @export_group("Boost")
 @export var jauge_max := 100.0
+@export var boost_infini := true  ## phase de test des voitures : pas de jauge, boost illimité
 @export var consommation := 22.0  ## par seconde de boost
 @export var recharge := 10.0  ## par seconde sans boost
 @export var attaque_distorsion := 8.0  ## vitesse à laquelle l'effet de boost s'installe
@@ -293,10 +294,11 @@ func _conduire(delta: float) -> void:
 	# son relâchement. On ignore alors le boost jusqu'à ce qu'on lâche vraiment la touche.
 	if _ignorer_boost and not Input.is_action_pressed("boost"):
 		_ignorer_boost = false
-	en_boost = Input.is_action_pressed("boost") and not _ignorer_boost and jauge_boost > 0.0
+	en_boost = Input.is_action_pressed("boost") and not _ignorer_boost and (boost_infini or jauge_boost > 0.0)
 
 	if en_boost:
-		jauge_boost = maxf(jauge_boost - consommation * delta, 0.0)
+		if not boost_infini:
+			jauge_boost = maxf(jauge_boost - consommation * delta, 0.0)
 		montee_boost = minf(montee_boost + delta / duree_montee_boost, 1.0)
 		# La poussée grandit avec le carré de la montée : douce au début, très
 		# forte à la fin.
