@@ -15,6 +15,9 @@ Space drift, R restart.
 | 4 | `circuit_01` | Drive the whole circuit (about 14.5 km) | Road wide enough everywhere, open tunnel entrance, no rock or block on the road | |
 | 5 | `circuit_01` | Hit walls hard, drive into the monster in the crater | The car never ends up under the road; if it gets stuck, it reappears on the road within 2 s | |
 | 6 | `circuit_01` | Look at the cities and the pyramid | Cities far from the road, hazy silhouettes, lit floors as soft lines, no flicker | |
+| 7 | `circuit_01` | Drive past both cities, look far away | Blade Runner haze: distant hills and cities melt into a thick grey-blue haze, each city has a glow above it (warm for city 1, cold for city 2); the road ahead stays easy to read, even with the boost | |
+| 8 | `circuit_01` | Look at the pyramid for a few seconds | Its 4 light beams slowly sweep the sky by a few degrees, each at its own pace (they never spin like the lighthouse) | |
+| 9 | `circuit_01` | Watch the frame rate (in the Godot editor: Debugger panel, Monitors tab, FPS) | No drop compared with before: the haze uses no volumetric fog | |
 | 10 | `circuit_01` | Start the race | You start underground, with a wall behind you; the road climbs inside the tunnel for about 1.8 km, up to the hairpin | |
 | 11 | `circuit_01` | Leave the tunnel and keep going | A short canyon, then a steep drop of about 120 m with city 1 and the pyramid below you | |
 | 12 | `circuit_01` | Take the turn at the bottom of that drop too fast | The road is hollow there (raised edges): the car rides up the edge and loses speed, it is never thrown over the wall | |
