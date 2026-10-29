@@ -1,7 +1,7 @@
 extends DecorBase
 ## Construit un vrai circuit à partir d'un fichier de données rangé dans
 ## circuits/ : la route (avec ses pentes et ses virages relevés), les murets,
-## les obstacles (blocs, tremplins, trous, tunnels, ponts), les lignes de
+## les obstacles (blocs, tremplins, trous, tunnels, ponts, bords relevés), les lignes de
 ## départ et d'arrivée, les piliers sous la route, le sol (mer, terre et
 ## montagnes, si le circuit a une carte du relief) et un décor de bâtiments.
 ## Gère aussi le chrono, les tours, et la réapparition quand on tombe.
@@ -16,6 +16,9 @@ extends DecorBase
 @export var nombre_batiments := 220
 @export var epaisseur_route := 1.2
 @export var hauteur_muret := 1.0
+## Largeur des bords relevés (obstacle « bord_releve ») : la route remonte en
+## arrondi sur cette distance de chaque côté, comme une piste de bobsleigh.
+@export var largeur_bord_releve := 12.0
 
 const SHADER_ROUTE := preload("res://shaders/route_circuit.gdshader")
 const SHADER_EAU := preload("res://shaders/eau.gdshader")
@@ -134,6 +137,15 @@ func _construire_courbe() -> void:
 	var points: Array[Vector3] = []
 	for p in _donnees.POINTS:
 		points.append(Vector3(p[0] * echelle, p[2], p[1] * echelle))
+	var profil: Array = _constante("PROFIL_ALTITUDE", [])
+	if not profil.is_empty():
+		# La hauteur des points vient du profil d'altitude, mesuré à plat le
+		# long des points de passage : de longs plats et de vraies côtes.
+		var parcouru := 0.0
+		for i in points.size():
+			if i > 0:
+				parcouru += Vector2(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z).length()
+			points[i].y = altitude_profil(parcouru, profil)
 	if _donnees.BOUCLE:
 		points.append(points[0])
 
@@ -167,6 +179,21 @@ func _construire_courbe() -> void:
 	print(texte.trim_suffix(","))
 
 
+## L'altitude du profil à une distance (mesurée à plat) : la hauteur d'un
+## repère, puis une montée ou une descente en douceur jusqu'au suivant
+## (raide au milieu, à plat aux deux bouts). Deux repères à la même hauteur
+## font un long plat.
+static func altitude_profil(s: float, profil: Array) -> float:
+	if s <= profil[0][0]:
+		return profil[0][1]
+	for k in profil.size() - 1:
+		var a: Array = profil[k]
+		var b: Array = profil[k + 1]
+		if s <= b[0]:
+			return lerpf(a[1], b[1], smoothstep(a[0], b[0], s))
+	return profil[-1][1]
+
+
 func _voisin(points: Array[Vector3], i: int) -> Vector3:
 	var n := points.size()
 	if _donnees.BOUCLE:
@@ -191,7 +218,18 @@ func _cadre(d: float) -> Dictionary:
 	var droite := avant.cross(Vector3.UP).normalized()
 	droite = droite.rotated(avant, deg_to_rad(reglages.y))
 	var haut := droite.cross(avant).normalized()
-	return {"d": d, "pos": pos, "avant": avant, "droite": droite, "haut": haut, "largeur": reglages.x}
+	return {"d": d, "pos": pos, "avant": avant, "droite": droite, "haut": haut, "largeur": reglages.x, "releve": _releve_a(d)}
+
+
+## La hauteur des bords relevés à cette distance (0 = route plate). Elle
+## monte et redescend en douceur sur les 60 premiers et derniers mètres.
+func _releve_a(d: float) -> float:
+	for o in _donnees.OBSTACLES:
+		if o.type == "bord_releve" and d > o.a and d < o.a + o.longueur:
+			var entree := smoothstep(o.a, o.a + 60.0, d)
+			var sortie := 1.0 - smoothstep(o.a + o.longueur - 60.0, o.a + o.longueur, d)
+			return minf(entree, sortie) * float(o.get("hauteur", 4.0))
+	return 0.0
 
 
 func _echantillon(d: float) -> Vector3:
@@ -246,7 +284,32 @@ func couleur_zone(d: float) -> Color:
 
 
 func _bord(t: Dictionary, cote: float) -> Vector3:
-	return t.pos + t.droite * (t.largeur * 0.5 * cote)
+	return t.pos + t.droite * (t.largeur * 0.5 * cote) + t.haut * t.releve
+
+
+## La route vue en coupe, de gauche à droite : [position, normale, écart au
+## centre] pour chaque sommet. Plate : ses deux bords. Avec des bords
+## relevés : un plat au milieu, puis de chaque côté une courbe qui remonte.
+func _coupe(t: Dictionary, avec_bords: bool) -> Array:
+	var demi: float = t.largeur * 0.5
+	if not avec_bords:
+		return [[_bord(t, -1.0), t.haut, -demi], [_bord(t, 1.0), t.haut, demi]]
+	var bord := minf(largeur_bord_releve, demi * 0.45)
+	var ecarts: Array[float] = []
+	for k in 5:
+		ecarts.append(-demi + bord * k / 4.0)
+	for k in 5:
+		ecarts.append(demi - bord + bord * k / 4.0)
+	var coupe := []
+	for x in ecarts:
+		# Hauteur en arc de parabole : nulle (et à plat) au bout du plat du
+		# milieu, « releve » au bord de la route.
+		var u := clampf((absf(x) - (demi - bord)) / bord, 0.0, 1.0)
+		var h: float = t.releve * u * u
+		var pente: float = signf(x) * 2.0 * t.releve * u / bord
+		var normale: Vector3 = (t.haut - t.droite * pente).normalized()
+		coupe.append([t.pos + t.droite * x + t.haut * h, normale, x])
+	return coupe
 
 
 # --- Route et murets -------------------------------------------------------------
@@ -275,9 +338,20 @@ func _construire_route() -> void:
 			# UV2.y = 2 : le shader allume les pointillés (lignes lumineuses).
 			var mode := 2.0 if _obstacle_a("lignes_lumineuses", milieu) else 0.0
 			dessus.set_color(couleur_zone(milieu).srgb_to_linear())
-			_quad(dessus, [al, ar, br, bl], a.haut,
-				[Vector2(-uv_a, a.d), Vector2(uv_a, a.d), Vector2(uv_b, b.d), Vector2(-uv_b, b.d)],
-				[Vector2(uv_a, mode), Vector2(uv_a, mode), Vector2(uv_b, mode), Vector2(uv_b, mode)])
+			# Chaque sommet a la normale de sa propre tranche : la lumière
+			# glisse d'une tranche à l'autre et on ne voit plus les facettes.
+			var avec_bords: bool = a.releve > 0.0 or b.releve > 0.0
+			var coupe_a := _coupe(a, avec_bords)
+			var coupe_b := _coupe(b, avec_bords)
+			for k in coupe_a.size() - 1:
+				var g_a: Array = coupe_a[k]
+				var d_a: Array = coupe_a[k + 1]
+				var g_b: Array = coupe_b[k]
+				var d_b: Array = coupe_b[k + 1]
+				_quad(dessus, [g_a[0], d_a[0], d_b[0], g_b[0]], a.haut,
+					[Vector2(g_a[2], a.d), Vector2(d_a[2], a.d), Vector2(d_b[2], b.d), Vector2(g_b[2], b.d)],
+					[Vector2(uv_a, mode), Vector2(uv_a, mode), Vector2(uv_b, mode), Vector2(uv_b, mode)],
+					[g_a[1], d_a[1], d_b[1], g_b[1]])
 
 		# L'épaisseur de la route : visible au bord des trous et des ravins.
 		var ea: Vector3 = a.haut * epaisseur_route
@@ -520,7 +594,12 @@ func _construire_tunnel(o: Dictionary) -> void:
 		d += 11.0
 	_ajouter_en_masse(BoxMesh.new(), traits, [], _matiere(teinte, 2.0))
 
-	_construire_facade(_cadre(o.a))
+	if o.a > 1.0:
+		_construire_facade(_cadre(o.a))
+	else:
+		# Le tunnel commence avec la course : on part sous terre, dos au mur.
+		var mur := _cadre(0.5)
+		_construire_bloc({"a": 0.5, "decalage": 0, "taille": [mur.largeur + 1.2, HAUTEUR_TUNNEL + 3.0, 1.0]}, _matiere(Color(0.33, 0.31, 0.3)), _matiere(couleur_zone(0.0), 2.0))
 	_construire_facade(_cadre(o.a + o.longueur))
 
 
@@ -803,7 +882,8 @@ func _format_temps(secondes: float) -> String:
 
 ## Ajoute un quadrilatère (deux triangles). Les sommets sont donnés dans
 ## l'ordre du tour ; « normale » indique le côté visible.
-func _quad(st: SurfaceTool, p: Array, normale: Vector3, uv: Array = [], uv2: Array = []) -> void:
+## « normales » (facultatif) : une normale par sommet, pour un éclairage lisse.
+func _quad(st: SurfaceTool, p: Array, normale: Vector3, uv: Array = [], uv2: Array = [], normales: Array = []) -> void:
 	for tri in [[0, 1, 2], [0, 2, 3]]:
 		var ordre: Array = tri
 		# Godot affiche les triangles dont les sommets tournent dans le sens
@@ -814,7 +894,7 @@ func _quad(st: SurfaceTool, p: Array, normale: Vector3, uv: Array = [], uv2: Arr
 		if (b - a).cross(c - a).dot(normale) > 0.0:
 			ordre = [ordre[0], ordre[2], ordre[1]]
 		for k in ordre:
-			st.set_normal(normale)
+			st.set_normal(normale if normales.is_empty() else normales[k])
 			if not uv.is_empty():
 				st.set_uv(uv[k])
 			if not uv2.is_empty():

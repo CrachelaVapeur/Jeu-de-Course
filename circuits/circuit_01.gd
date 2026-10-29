@@ -1,9 +1,10 @@
 extends RefCounted
 ## Circuit 1, d'après la carte annotée d'Eric (docs/circuit_01/carte_annotee.png)
 ## et sa heatmap d'élévation (docs/circuit_01/heatmap_elevation.png).
-## Une course de nuit d'environ 15 km, d'un point à un autre : départ en
-## montagne, tunnel, Cyber City 1, pont au-dessus de l'embouchure, montée dans
-## la montagne, zone cratère, Cyber City 2 et longue ligne droite finale.
+## Une course de nuit d'environ 15 km, d'un point à un autre : départ sous
+## terre, longue montée dans le tunnel, Cyber City 1, pont au-dessus de
+## l'embouchure, montée dans la montagne, zone cratère, Cyber City 2 et
+## longue ligne droite finale.
 ##
 ## Les points de passage ont été relevés automatiquement sur la carte par
 ## outils/relever_trace.py, puis peuvent être retouchés à la main ici.
@@ -11,7 +12,8 @@ extends RefCounted
 ## - x, y : position en PIXELS sur la carte annotée (1920 x 1080) ;
 ##   ECHELLE les convertit en mètres. On peut donc ouvrir la carte dans un
 ##   logiciel de dessin, lire la position d'un pixel et l'écrire ici.
-## - hauteur en mètres (rouge de la heatmap = 12 m, blanc = 170 m) ;
+## - hauteur en mètres : n'est plus utilisée, c'est PROFIL_ALTITUDE (plus bas)
+##   qui donne la hauteur de la route ;
 ## - dévers en degrés (positif = la route penche vers la droite) ;
 ## - largeur de la route en mètres.
 ## Le commentaire à droite donne la distance approximative depuis le départ.
@@ -32,11 +34,28 @@ const NIVEAU_MER := 0.0
 const HAUTEUR_MONTAGNES := 230.0
 const BATIMENTS := 0  ## pas de bâtiments au hasard : les villes sont placées ci-dessous
 
+## Le profil d'altitude de la route : [distance, hauteur] en mètres, la
+## distance étant mesurée à plat depuis le départ. Entre deux repères, la
+## route monte ou descend en douceur ; deux repères à la même hauteur font
+## un long plat. On peut changer ces chiffres pour remodeler les côtes.
+const PROFIL_ALTITUDE := [
+	[0, 10], [300, 10],  # départ sous terre
+	[1800, 150],  # grande montée dans le tunnel, jusqu'à l'épingle
+	[2800, 150],  # sortie du tunnel, puis le bord de la falaise
+	[3500, 32],  # grande descente avec la ville 1 en contrebas
+	[5250, 32],  # Cyber City 1 sur une voie surélevée, puis le pont
+	[7300, 200],  # grande montée vers la montagne
+	[8350, 200],  # le plateau et ses virages, jusqu'au saut
+	[9050, 12],  # grande descente vers le cratère
+	[10300, 12],  # le cratère
+	[10800, 30],  # Cyber City 2
+	[14500, 30],  # la ligne droite finale
+]
+
 ## La teinte des lumières de chaque section (murets, lampadaires, portiques,
 ## lignes au sol…) : une seule couleur par zone, à partir de la distance « a ».
 const COULEURS_ZONES := [
-	{"a": 0, "couleur": Color(0.7, 0.82, 1.0)},  # canyon du départ : blanc froid
-	{"a": 1048, "couleur": Color(0.35, 0.85, 1.0)},  # tunnel : cyan
+	{"a": 0, "couleur": Color(0.35, 0.85, 1.0)},  # le tunnel du départ : cyan
 	{"a": 2400, "couleur": Color(0.7, 0.82, 1.0)},  # sortie du tunnel
 	{"a": 2677, "couleur": Color(1.0, 0.78, 0.5)},  # Cyber City 1 : ambre, comme la pyramide
 	{"a": 4253, "couleur": Color(0.7, 0.82, 1.0)},  # le pont : blanc froid
@@ -395,9 +414,19 @@ const POINTS := [
 ]
 
 const OBSTACLES := [
-	{"type": "tunnel", "a": 1048, "longueur": 1349},
+	# On part sous terre : le tunnel commence avec la route.
+	{"type": "tunnel", "a": 0, "longueur": 2397},
 	{"type": "pont", "a": 4293, "longueur": 870},
-	# Descente vers le cratère : un saut au-dessus d'une crevasse.
+	# Bords relevés (piste en creux, comme un bobsleigh) dans les grands
+	# virages : ils retiennent le bolide qui arrive trop vite.
+	{"type": "bord_releve", "a": 1780, "longueur": 400},  # l'épingle du tunnel
+	{"type": "bord_releve", "a": 3580, "longueur": 300, "hauteur": 5},  # au bas de la grande descente
+	{"type": "bord_releve", "a": 7280, "longueur": 300},  # le plateau
+	{"type": "bord_releve", "a": 8020, "longueur": 320},
+	{"type": "bord_releve", "a": 10720, "longueur": 220},  # Cyber City 2
+	{"type": "bord_releve", "a": 11620, "longueur": 240},
+	# Au bout du plateau : un saut au-dessus d'une crevasse, puis la grande
+	# descente vers le cratère.
 	{"type": "tremplin", "a": 8393, "longueur": 25, "hauteur": 3},
 	{"type": "trou", "a": 8418, "longueur": 45},
 	{"type": "sans_muret", "a": 7871, "longueur": 233, "cote": "gauche"},
@@ -407,7 +436,6 @@ const OBSTACLES := [
 
 	# Repères de vitesse et éclairage : chaque section a le sien, et certaines
 	# restent sombres exprès, pour les contrastes.
-	{"type": "balises", "a": 40, "longueur": 983},  # canyon du départ
 	{"type": "balises", "a": 2407, "longueur": 473},
 	{"type": "lampadaires", "a": 2855, "longueur": 1298, "ecart": 60},
 	{"type": "lignes_lumineuses", "a": 2939, "longueur": 1077},

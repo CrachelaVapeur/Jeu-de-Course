@@ -15,6 +15,11 @@ Space drift, R restart.
 | 4 | `circuit_01` | Drive the whole circuit (about 14.5 km) | Road wide enough everywhere, open tunnel entrance, no rock or block on the road | |
 | 5 | `circuit_01` | Hit walls hard, drive into the monster in the crater | The car never ends up under the road; if it gets stuck, it reappears on the road within 2 s | |
 | 6 | `circuit_01` | Look at the cities and the pyramid | Cities far from the road, hazy silhouettes, lit floors as soft lines, no flicker | |
+| 10 | `circuit_01` | Start the race | You start underground, with a wall behind you; the road climbs inside the tunnel for about 1.8 km, up to the hairpin | |
+| 11 | `circuit_01` | Leave the tunnel and keep going | A short canyon, then a steep drop of about 120 m with city 1 and the pyramid below you | |
+| 12 | `circuit_01` | Take the turn at the bottom of that drop too fast | The road is hollow there (raised edges): the car rides up the edge and loses speed, it is never thrown over the wall | |
+| 13 | `circuit_01` | After the bridge | A long climb up to 200 m, a plateau with banked turns, a jump over a crevasse, then a steep drop into the crater | |
+| 14 | `circuit_01` | Watch the road surface under the lights | No visible facets or steps, slopes change smoothly | |
 
 Note: the boost gauge is hidden and the boost is infinite for now (car
 testing phase, `boost_infini` on the Vehicule node).
