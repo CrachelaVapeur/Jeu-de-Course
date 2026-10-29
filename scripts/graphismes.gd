@@ -1,5 +1,7 @@
 extends Node
 ## Réglages graphiques (autoload « Graphismes »), sauvegardés dans user://.
+## Il garde aussi deux réglages d'affichage et de conduite : le guide des
+## commandes et la conduite d'essai « glisse ».
 ##
 ## Les réglages « Élevé » correspondent au rendu d'origine du jeu. « Bas » est
 ## prévu pour les petits PC portables (carte graphique intégrée).
@@ -10,6 +12,12 @@ const FICHIER := "user://reglages_graphiques.cfg"
 
 ## Échelle de rendu 3D proposée (le HUD reste net, seul le monde 3D est réduit).
 const ECHELLES: Array[float] = [0.5, 0.67, 0.75, 1.0]
+
+## Taille du texte et de toute l'interface (menus, HUD) : multiplie l'échelle de
+## l'écran (project.godot : display/window/stretch = canvas_items). Grand par
+## défaut sur les petits écrans (AYN Thor : 6 pouces).
+const TAILLES_TEXTE: Array[float] = [1.0, 1.4, 1.8]
+const NOMS_TAILLES_TEXTE: Array[String] = ["Normal", "Large", "Extra large"]
 
 ## Valeurs de chaque préréglage : bas, moyen, élevé.
 const PREREGLAGES := [
@@ -25,6 +33,11 @@ var glow := true  ## halo lumineux
 var contours := true  ## traits sombres autour des objets (scène main)
 var effets := true  ## lignes de vitesse et vision en tunnel
 var afficher_fps := false
+var afficher_guide := true  ## guide des commandes dans le coin du HUD
+var conduite_glisse := false  ## conduite d'essai « glisse » (voir vehicule.gd, groupe Mode glisse)
+var vue_camera := 0  ## dernière vue choisie (voir camera_poursuite.gd), gardée d'une course à l'autre
+var style_manette := 0  ## noms des boutons affichés : 0 Auto, 1 Xbox, 2 Nintendo, 3 PlayStation (voir boutons.gd)
+var taille_texte := 1 if OS.has_feature("mobile") else 0  ## indice dans TAILLES_TEXTE
 
 var _label_fps: Label
 
@@ -69,11 +82,12 @@ func appliquer_viewport() -> void:
 	racine.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR if echelle >= 1.0 else Viewport.SCALING_3D_MODE_FSR
 	racine.scaling_3d_scale = echelle
 	racine.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][msaa]
+	racine.content_scale_factor = TAILLES_TEXTE[clampi(taille_texte, 0, TAILLES_TEXTE.size() - 1)]
 
 
 func sauvegarder() -> void:
 	var cfg := ConfigFile.new()
-	for nom in ["echelle", "msaa", "ombres", "glow", "contours", "effets", "afficher_fps"]:
+	for nom in ["echelle", "msaa", "ombres", "glow", "contours", "effets", "afficher_fps", "afficher_guide", "conduite_glisse", "vue_camera", "style_manette", "taille_texte"]:
 		cfg.set_value("graphismes", nom, get(nom))
 	cfg.save(FICHIER)
 
@@ -89,6 +103,11 @@ func charger() -> void:
 	contours = cfg.get_value("graphismes", "contours", contours)
 	effets = cfg.get_value("graphismes", "effets", effets)
 	afficher_fps = cfg.get_value("graphismes", "afficher_fps", afficher_fps)
+	afficher_guide = cfg.get_value("graphismes", "afficher_guide", afficher_guide)
+	conduite_glisse = cfg.get_value("graphismes", "conduite_glisse", conduite_glisse)
+	vue_camera = cfg.get_value("graphismes", "vue_camera", vue_camera)
+	style_manette = cfg.get_value("graphismes", "style_manette", style_manette)
+	taille_texte = cfg.get_value("graphismes", "taille_texte", taille_texte)
 
 
 ## Appelé pour chaque nœud qui entre dans l'arbre : coupe les ombres, le halo

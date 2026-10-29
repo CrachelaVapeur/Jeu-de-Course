@@ -59,6 +59,10 @@ signal atterrissage(force: float)
 @export var position_capot := Vector3(0.0, 0.3, -2.3)
 ## Matière (toon) appliquée au modèle 3D. Les couleurs viennent des couleurs de sommets du modèle.
 @export var matiere_modele: Material
+## Effet « Redline » (le film d'animation) : en boost, le bolide s'étire vers l'arrière,
+## comme happé par la vitesse (le nez ne bouge pas). 0 = pas d'effet, 0.35 = 35 % plus long.
+@export var etirement_boost := 0.35
+@export var affinement_boost := 0.12  ## en même temps, il s'affine d'autant (largeur et hauteur)
 
 @export_group("Circuit")
 ## Coché : ancienne ligne droite d'essai. Décoché : vrai circuit avec relief.
@@ -123,6 +127,19 @@ signal atterrissage(force: float)
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 @export var recharge_boost_derapage := 14.0  ## jauge gagnée par seconde de dérapage
 
+@export_group("Mode glisse (essai de Maximo : Wipeout × Art of Rally)")
+## Conduite d'essai, activée dans le menu (Settings > Slide handling). Décoché = conduite d'origine.
+## - braquer fort à haute vitesse fait glisser l'arrière tout seul (pas besoin de bouton) ;
+## - la glisse garde l'élan (on perd peu de vitesse) ;
+## - le boost en glisse sert à se recaler : la trajectoire rejoint la direction du nez
+##   et l'arrière se replante. On vise avec le nez, puis on boost pour sortir de la glisse.
+@export var mode_glisse := false
+@export var braquage_glisse := 0.7  ## au-delà de ce braquage (0..1), le grip part tout seul
+@export var perte_grip_braquage := 1.6  ## grip perdu par seconde en braquant fort
+@export var perte_vitesse_glisse := 0.06  ## remplace « perte_vitesse_derapage » dans ce mode
+@export var correction_boost := 2.2  ## rad/s : en boost, la trajectoire rejoint le nez
+@export var reprise_grip_boost := 1.5  ## grip regagné par seconde en boost
+
 var vitesse := 0.0
 var en_derapage := false
 var jauge_boost := 100.0
@@ -140,6 +157,8 @@ const RAYON_ARRIERE := 0.42
 ## Au-delà, les roues tourneraient trop vite pour l'écran (effet « roue de chariot »).
 const ROTATION_VISUELLE_MAX := 28.0  # radians par seconde
 const BRAQUAGE_MAX := 0.45  # radians, roues avant
+const DEMI_LONGUEUR := 2.1  # mètres, du centre au nez (pour garder le nez en place quand on s'étire)
+const HAUTEUR_PIVOT := 0.7  # mètres entre le pivot de la carrosserie et le bas du modèle (voir vehicule.tscn)
 
 var _cap := 0.0  # angle du bolide autour de l'axe vertical (là où pointe le nez)
 var _cap_trajectoire := 0.0  # direction dans laquelle on se déplace vraiment
@@ -173,6 +192,7 @@ var _longueur_laterale := 0.0  # longueur lissée des flammes d'échappement lat
 var _largeur_laterale := 1.0
 var _angle_roue_avant := 0.0
 var _angle_roue_arriere := 0.0
+var _decalage_etirement := 0.0  # recul de la carrosserie pendant l'étirement du boost
 
 @onready var _flammes_laterales: Array[Node3D] = [
 	$Carrosserie/SortieG/Flamme,
@@ -185,6 +205,9 @@ var _angle_roue_arriere := 0.0
 
 func _ready() -> void:
 	jauge_boost = jauge_max
+	var reglages := get_node_or_null("/root/Graphismes")
+	if reglages != null:
+		mode_glisse = reglages.conduite_glisse
 	_depart = global_transform
 	_cap = rotation.y
 	_cap_trajectoire = _cap
@@ -305,7 +328,11 @@ func ratio_vitesse() -> float:
 ## Le point de vue du pilote (ou du nez, si « capot ») : il suit la
 ## carrosserie (pente, roulis, dérapage).
 func repere_cockpit(capot := false) -> Transform3D:
-	return _carrosserie.global_transform * Transform3D(Basis.IDENTITY, position_capot if capot else position_cockpit)
+	# Sans l'étirement du boost : la caméra ne doit être ni déformée ni reculée avec lui.
+	var repere := _carrosserie.global_transform
+	repere.basis = repere.basis.orthonormalized()
+	repere.origin -= repere.basis.z * _decalage_etirement
+	return repere * Transform3D(Basis.IDENTITY, position_capot if capot else position_cockpit)
 
 
 ## La direction du « haut » du sol sous le bolide (penchée sur une paroi).
@@ -392,6 +419,11 @@ func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 			_grip = maxf(_grip - impulsion_appui, 0.05)
 		if levee:
 			_grip = maxf(_grip - impulsion_levee, 0.05)
+		if mode_glisse:
+			if en_boost:
+				_grip = minf(_grip + reprise_grip_boost * delta, 1.0)  # le boost replante l'arrière
+			elif absf(brut) > braquage_glisse and gaz > 0.3:
+				_grip = maxf(_grip - perte_grip_braquage * delta, grip_frein_a_main)  # braquer fort fait glisser
 		var plancher := 1.0
 		if Input.is_action_pressed("deraper"):
 			plancher = grip_frein_a_main
@@ -434,10 +466,16 @@ func _conduire_avec_grip(brut: float, manoeuvre: float, delta: float) -> void:
 		angle *= 1.15  # freiner en dérapage déstabilise l'arrière
 	angle = minf(angle, angle_glisse_max)
 	_glisse = lerpf(_glisse, _sens_derapage * angle, 1.0 - exp(-reactivite_glisse * delta))
+	if mode_glisse and en_boost and absf(_glisse) > 0.01:
+		# Le boost pousse dans l'axe du nez : la trajectoire tourne vers lui (le nez ne bouge pas).
+		var pas := clampf(_glisse, -correction_boost * delta, correction_boost * delta)
+		_cap_trajectoire += pas
+		_glisse -= pas
 	_cap = _cap_trajectoire + _glisse
 
 	if en_derapage:
-		vitesse = maxf(vitesse - vitesse * perte_vitesse_derapage * absf(_glisse) / angle_glisse_max * delta, 0.0)
+		var perte := perte_vitesse_glisse if mode_glisse else perte_vitesse_derapage
+		vitesse = maxf(vitesse - vitesse * perte * absf(_glisse) / angle_glisse_max * delta, 0.0)
 		jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
 
 
@@ -473,6 +511,12 @@ func _avancer_sur_le_relief(delta: float) -> void:
 
 	var vitesse_chute := -velocity.y
 	move_and_slide()
+	if not en_l_air and not is_on_floor():
+		# Godot n'aimante pas au sol un corps qui monte (vitesse vers le haut) : en côte, la
+		# moindre bosse faisait décoller le bolide (petits sauts invisibles, voiture qui
+		# « flotte », direction réduite). On l'aimante à la main ; sur un vrai tremplin ou
+		# au bord d'un trou, il n'y a plus de route sous lui et il décolle quand même.
+		apply_floor_snap()
 
 	if en_l_air and is_on_floor() and vitesse_chute > 6.0:
 		atterrissage.emit(vitesse_chute)
@@ -655,7 +699,21 @@ func _animer(delta: float) -> void:
 	var suspension := (sin(_temps * 37.0) * 0.004 + sin(_temps * 13.0) * 0.003) * allure
 	_carrosserie.position = Vector3(0.0, 0.55, 0.0) + n.normalized() * (0.15 + suspension)
 	_carrosserie.rotation.z = lerpf(_carrosserie.rotation.z, roulis_sol + virage * 0.07 * allure, lissage)
-	_carrosserie.rotation.x = lerpf(_carrosserie.rotation.x, tangage_sol + (0.04 if en_boost else 0.0), lissage)
+	# Nez qui se lève en boost ; avec l'effet « Redline », le bolide reste à plat en
+	# s'étirant (sinon l'arrière, plus long, rentrerait dans la route).
+	var leve_nez := (0.04 if en_boost else 0.0) * (1.0 - distorsion if etirement_boost > 0.0 else 1.0)
+	_carrosserie.rotation.x = lerpf(_carrosserie.rotation.x, tangage_sol + leve_nez, lissage)
+
+	# Effet « Redline » : la carrosserie s'étire vers l'arrière et s'affine, au rythme
+	# de « distorsion » (qui suit la montée du boost). On la recule de la moitié de
+	# l'allongement pour que le nez reste en place, et on la remonte d'autant qu'elle
+	# s'aplatit pour que les roues restent sur la route (le modèle est 0,7 m sous le pivot).
+	var etirement := etirement_boost * distorsion
+	var affinement := 1.0 - affinement_boost * distorsion
+	_carrosserie.scale = Vector3(affinement, affinement, 1.0 + etirement)
+	_decalage_etirement = DEMI_LONGUEUR * etirement
+	var remontee := HAUTEUR_PIVOT * (1.0 - affinement)
+	_carrosserie.position += Basis.from_euler(_carrosserie.rotation) * Vector3(0.0, remontee, _decalage_etirement)
 
 	_animer_roues(delta, virage, lissage)
 

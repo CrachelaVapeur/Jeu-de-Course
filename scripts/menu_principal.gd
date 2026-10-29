@@ -20,11 +20,17 @@ var _page_reglages: VBoxContainer
 var _liste_prereglages: OptionButton
 var _liste_echelle: OptionButton
 var _liste_msaa: OptionButton
+var _liste_manette: OptionButton
+var _liste_texte: OptionButton
+var _defilement: ScrollContainer  # contient la page des réglages
+var _aide: Label  # le mot d'aide en bas du menu (noms des boutons)
 var _cases: Dictionary = {}  # nom du réglage -> CheckButton
 var _en_chargement := false  # vrai pendant qu'on remplit l'interface (évite les rappels)
 
 
 func _ready() -> void:
+	# Manette : le bouton du bas valide, celui de droite revient en arrière (réglages de
+	# Godot « ui_accept » / « ui_cancel »), quel que soit le nom écrit dessus (voir boutons.gd).
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var fond := ColorRect.new()
 	fond.color = Color(0.05, 0.03, 0.09)
@@ -49,9 +55,16 @@ func _ready() -> void:
 	_page_menu = VBoxContainer.new()
 	_page_menu.add_theme_constant_override("separation", 10)
 	colonne.add_child(_page_menu)
+	# Les réglages défilent si l'écran est trop petit (grand texte sur l'AYN Thor) ;
+	# la manette fait défiler toute seule jusqu'à la ligne choisie.
+	_defilement = ScrollContainer.new()
+	_defilement.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_defilement.follow_focus = true
+	colonne.add_child(_defilement)
 	_page_reglages = VBoxContainer.new()
 	_page_reglages.add_theme_constant_override("separation", 10)
-	colonne.add_child(_page_reglages)
+	_page_reglages.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_defilement.add_child(_page_reglages)
 
 	_construire_page_menu()
 	_construire_page_reglages()
@@ -59,7 +72,7 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") and _page_reglages.visible:
+	if event.is_action_pressed("ui_cancel") and _defilement.visible:
 		_montrer_page(_page_menu)
 		get_viewport().set_input_as_handled()
 
@@ -72,17 +85,30 @@ func _construire_page_menu() -> void:
 		bouton.pressed.connect(_lancer.bind(course["scene"]))
 		_page_menu.add_child(bouton)
 	_page_menu.add_child(HSeparator.new())
-	var reglages := _bouton("Graphics settings")
+	var reglages := _bouton("Settings")
 	reglages.pressed.connect(func() -> void: _montrer_page(_page_reglages))
 	_page_menu.add_child(reglages)
-	var quitter := _bouton("Quit")
-	quitter.pressed.connect(func() -> void: get_tree().quit())
-	_page_menu.add_child(quitter)
-	_page_menu.add_child(_etiquette("In a race: Esc = back to this menu", 16, HORIZONTAL_ALIGNMENT_CENTER))
+	# Pas de « Quit » sur téléphone / console Android : Godot y tue le jeu, le système le
+	# relance aussitôt en arrière-plan sans fenêtre, et le lanceur de l'AYN Thor ne peut
+	# plus l'ouvrir depuis son icône. On quitte avec le bouton Home, comme les autres jeux.
+	if not OS.has_feature("mobile"):
+		var quitter := _bouton("Quit")
+		quitter.pressed.connect(func() -> void: get_tree().quit())
+		_page_menu.add_child(quitter)
+	_aide = _etiquette("", 16, HORIZONTAL_ALIGNMENT_CENTER)
+	_page_menu.add_child(_aide)
+	_actualiser_aide()
+
+
+## Le mot d'aide en bas du menu, avec les noms des boutons de la manette choisie.
+func _actualiser_aide() -> void:
+	var style := Boutons.style_des_reglages(get_tree())
+	_aide.text = "Confirm: %s / Enter    Back: %s / Esc\nIn a race: %s / Esc = pause menu,  %s / M = map" % [
+		Boutons.nom("A", style), Boutons.nom("B", style), Boutons.nom("START", style), Boutons.nom("VIEW", style)]
 
 
 func _construire_page_reglages() -> void:
-	_page_reglages.add_child(_etiquette("Graphics settings", 22, HORIZONTAL_ALIGNMENT_CENTER))
+	_page_reglages.add_child(_etiquette("Settings", 22, HORIZONTAL_ALIGNMENT_CENTER))
 	_page_reglages.add_child(_etiquette("Low is made for weak laptops. High is the original look.", 16, HORIZONTAL_ALIGNMENT_CENTER))
 
 	_liste_prereglages = OptionButton.new()
@@ -108,6 +134,20 @@ func _construire_page_reglages() -> void:
 	_ajouter_case("glow", "Glow (bloom)")
 	_ajouter_case("contours", "Outlines (speed test)")
 	_ajouter_case("effets", "Speed lines and tunnel vision")
+	_liste_manette = OptionButton.new()
+	for nom in Boutons.NOMS_STYLES:
+		_liste_manette.add_item(nom)
+	_liste_manette.item_selected.connect(_sur_manette)
+	_page_reglages.add_child(_ligne("Controller buttons", _liste_manette))
+
+	_liste_texte = OptionButton.new()
+	for nom in _g.NOMS_TAILLES_TEXTE:
+		_liste_texte.add_item(nom)
+	_liste_texte.item_selected.connect(_sur_taille_texte)
+	_page_reglages.add_child(_ligne("Text size", _liste_texte))
+
+	_ajouter_case("conduite_glisse", "Slide handling (test: Wipeout x Art of Rally)")
+	_ajouter_case("afficher_guide", "Controls guide (top left)")
 	_ajouter_case("afficher_fps", "Show FPS counter")
 
 	var retour := _bouton("Back")
@@ -124,12 +164,19 @@ func _ajouter_case(nom: String, texte: String) -> void:
 
 func _montrer_page(page: Control) -> void:
 	_page_menu.visible = page == _page_menu
-	_page_reglages.visible = page == _page_reglages
+	_defilement.visible = page == _page_reglages
 	if page == _page_reglages:
 		_remplir_reglages()
+		_ajuster_defilement()
 		_liste_prereglages.grab_focus()
 	else:
 		(_page_menu.get_child(1) as Button).grab_focus()
+
+
+## Hauteur de la zone qui défile : toute la page si elle tient, sinon l'écran moins le titre.
+func _ajuster_defilement() -> void:
+	var disponible := get_viewport_rect().size.y - 120.0
+	_defilement.custom_minimum_size.y = minf(_page_reglages.get_combined_minimum_size().y, disponible)
 
 
 ## Copie les réglages actuels dans les contrôles, sans déclencher les rappels.
@@ -139,6 +186,8 @@ func _remplir_reglages() -> void:
 	_liste_prereglages.select(actuel if actuel >= 0 else NOMS_PREREGLAGES.size())
 	_liste_echelle.select(_indice_echelle(_g.echelle))
 	_liste_msaa.select(_g.msaa)
+	_liste_manette.select(_g.style_manette)
+	_liste_texte.select(_g.taille_texte)
 	for nom in _cases:
 		(_cases[nom] as CheckButton).button_pressed = _g.get(nom)
 	_en_chargement = false
@@ -171,6 +220,22 @@ func _sur_msaa(indice: int) -> void:
 		return
 	_g.msaa = indice
 	_valider_reglages()
+
+
+func _sur_manette(indice: int) -> void:
+	if _en_chargement:
+		return
+	_g.style_manette = indice
+	_g.sauvegarder()
+	_actualiser_aide()
+
+
+func _sur_taille_texte(indice: int) -> void:
+	if _en_chargement:
+		return
+	_g.taille_texte = indice
+	_valider_reglages()
+	_ajuster_defilement.call_deferred()  # l'écran « rétrécit » : la zone qui défile aussi
 
 
 func _sur_case(active: bool, nom: String) -> void:

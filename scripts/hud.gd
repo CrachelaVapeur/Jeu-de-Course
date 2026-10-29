@@ -10,6 +10,20 @@ extends CanvasLayer
 @onready var _g: Node = get_node("/root/Graphismes")  # l'autoload des réglages
 
 
+func _ready() -> void:
+	# Le guide en icônes (coin en haut à gauche) remplace l'ancienne aide en texte.
+	add_child(preload("res://scripts/guide_commandes.gd").new())
+	($Aide as Label).visible = false
+	# La carte (Select / M) puis le menu de pause (Start / Échap), par-dessus tout le reste.
+	var carte: Control = preload("res://scripts/carte.gd").new()
+	carte.vehicule = vehicule
+	carte.circuit = get_parent().get_node_or_null("Circuit")
+	add_child(carte)
+	var pause: Control = preload("res://scripts/menu_pause.gd").new()
+	pause.vehicule = vehicule
+	add_child(pause)
+
+
 func _process(delta: float) -> void:
 	_compteur.text = "%d km/h" % absi(roundi(vehicule.vitesse_kmh()))
 	_jauge.visible = not vehicule.boost_infini
