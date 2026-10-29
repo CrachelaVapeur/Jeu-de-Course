@@ -417,14 +417,16 @@ const OBSTACLES := [
 	# On part sous terre : le tunnel commence avec la route.
 	{"type": "tunnel", "a": 0, "longueur": 2397},
 	{"type": "pont", "a": 4293, "longueur": 870},
-	# Bords relevés (piste en creux, comme un bobsleigh) dans les grands
-	# virages : ils retiennent le bolide qui arrive trop vite.
-	{"type": "bord_releve", "a": 1780, "longueur": 400},  # l'épingle du tunnel
-	{"type": "bord_releve", "a": 3580, "longueur": 300, "hauteur": 5},  # au bas de la grande descente
-	{"type": "bord_releve", "a": 7280, "longueur": 300},  # le plateau
-	{"type": "bord_releve", "a": 8020, "longueur": 320},
-	{"type": "bord_releve", "a": 10720, "longueur": 220},  # Cyber City 2
-	{"type": "bord_releve", "a": 11620, "longueur": 240},
+	# Virages en half-pipe : une paroi courbe de chaque côté, bien plus haute
+	# à l'extérieur. Plus on arrive vite, plus on monte sur la paroi, et c'est
+	# elle qui fait tourner le bolide : on passe sans lever le pied. Chaque
+	# zone commence 80 m avant le virage (la paroi est déjà haute quand il
+	# commence) et finit 100 m après (on a le temps de redescendre).
+	{"type": "bord_releve", "a": 1640, "longueur": 680},  # l'épingle du tunnel
+	{"type": "bord_releve", "a": 3380, "longueur": 880},  # au bas de la grande descente : un grand S
+	{"type": "bord_releve", "a": 7080, "longueur": 1300},  # le plateau, jusqu'au saut
+	{"type": "bord_releve", "a": 10630, "longueur": 400},  # Cyber City 2
+	{"type": "bord_releve", "a": 11550, "longueur": 400},
 	# Au bout du plateau : un saut au-dessus d'une crevasse, puis la grande
 	# descente vers le cratère.
 	{"type": "tremplin", "a": 8393, "longueur": 25, "hauteur": 3},

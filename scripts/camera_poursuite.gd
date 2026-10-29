@@ -2,7 +2,8 @@ extends Camera3D
 ## Caméra qui suit le bolide et fabrique une bonne partie de la sensation de
 ## vitesse : champ de vision qui s'élargit, recul quand on accélère fort,
 ## tremblements en boost et lors des chocs.
-## Touche C (bouton Y de la manette) : passe en vue cockpit et revient.
+## Touche C (bouton Y de la manette) : poursuite, puis cockpit, puis capot,
+## puis de nouveau poursuite.
 
 @export var cible: Vehicule
 
@@ -13,12 +14,18 @@ extends Camera3D
 @export var fov_distorsion := 160.0  ## champ de vision pendant le boost : l'espace semble se déformer
 @export var recul_max := 3.0  ## la caméra « décroche » quand le boost démarre
 @export var secousse_pleine_vitesse := 0.08  ## tremblement en plein boost (monte progressivement avec la vitesse)
-@export var vue_cockpit := false  ## vrai : on voit la route depuis le siège du pilote
+## Poursuite : derrière le bolide. Cockpit : depuis le siège du pilote.
+## Capot : sur le nez du bolide.
+@export_enum("Poursuite", "Cockpit", "Capot") var vue := 0
+## Sur une paroi de half-pipe, part de la pente que la caméra suit (elle
+## penche avec le bolide). 0 = toujours droite, 1 = collée à la paroi.
+@export var penche_paroi := 0.6
 
 var _cap_camera := 0.0
 var _vitesse_precedente := 0.0
 var _recul := 0.0
 var _secousse := 0.0
+var _haut := Vector3.UP  # le « haut » de la caméra, lissé
 
 
 func _ready() -> void:
@@ -39,12 +46,16 @@ func _physics_process(delta: float) -> void:
 	_recul = lerpf(_recul, clampf(acceleration * 0.04, -1.0, recul_max), 1.0 - exp(-3.0 * delta))
 
 	if Input.is_action_just_pressed("camera"):
-		vue_cockpit = not vue_cockpit
-	if vue_cockpit:
-		global_transform = cible.repere_cockpit()
+		vue = (vue + 1) % 3
+	if vue > 0:
+		global_transform = cible.repere_cockpit(vue == 2)
 	else:
-		global_position = cible.global_position + arriere * (distance + _recul) + Vector3.UP * hauteur
-		look_at(cible.global_position - arriere * 12.0 + Vector3.UP * 1.0)
+		# Sur une paroi, la caméra se place au-dessus du bolide par rapport à
+		# la paroi (pas dans le vide) et penche avec lui.
+		var haut_voulu := Vector3.UP.lerp(cible.normale_sol(), penche_paroi).normalized()
+		_haut = _haut.slerp(haut_voulu, 1.0 - exp(-4.0 * delta)).normalized()
+		global_position = cible.global_position + arriere * (distance + _recul) + _haut * hauteur
+		look_at(cible.global_position - arriere * 12.0 + _haut * 1.0, _haut)
 
 	# 3. Le champ de vision s'élargit avec la vitesse : c'est l'effet le plus fort.
 	var ratio := clampf(cible.vitesse / cible.vitesse_boost, 0.0, 1.0)

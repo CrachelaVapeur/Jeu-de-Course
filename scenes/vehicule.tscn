@@ -56,8 +56,9 @@ radial_segments = 12
 rings = 1
 
 [node name="Vehicule" type="CharacterBody3D"]
-floor_max_angle = 0.87266463
+floor_max_angle = 1.3089969
 floor_snap_length = 0.6
+floor_block_on_wall = false
 script = ExtResource("1_script")
 matiere_modele = SubResource("modele")
 

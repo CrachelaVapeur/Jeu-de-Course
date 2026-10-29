@@ -13,7 +13,7 @@ const COMMANDES := {
 	"boost": {"touches": [KEY_SHIFT], "bouton": JOY_BUTTON_A},
 	"deraper": {"touches": [KEY_SPACE, KEY_X], "bouton": JOY_BUTTON_RIGHT_SHOULDER},
 	"recommencer": {"touches": [KEY_R], "bouton": JOY_BUTTON_START},
-	"camera": {"touches": [KEY_C], "bouton": JOY_BUTTON_Y},  # vue poursuite / vue cockpit
+	"camera": {"touches": [KEY_C], "bouton": JOY_BUTTON_Y},  # vue poursuite / cockpit / capot
 }
 
 

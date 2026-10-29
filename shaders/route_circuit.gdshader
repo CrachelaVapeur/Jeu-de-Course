@@ -80,6 +80,24 @@ void route(vec2 uv, float demi, bool lumineuse, float temps, vec3 teinte, out ve
 
 	albedo = mix(c, teinte, trait_neon);
 	emission = teinte * trait_neon * force_neon;
+
+	// Au-delà du bord : la paroi d'un half-pipe (u = mètres en montant).
+	float u = ax - demi;
+	if (u > 0.0) {
+		// Du métal sombre, avec des traits lumineux parallèles à la route
+		// et des flèches qui filent vers l'avant (on sent la vitesse).
+		vec3 metal = vec3(0.12, 0.12, 0.15) * (0.94 + 0.12 * bruit(vec2(u * 0.5, d * 0.05)));
+		// Un trait tous les 3 m : « vers_trait » = mètres jusqu'au plus proche.
+		float vers_trait = abs(fract(u / 3.0 + 0.5) - 0.5) * 3.0;
+		float traits = 1.0 - smoothstep(0.08, 0.18, vers_trait);
+		// Une seule rangée de chevrons « > » (entre 6 et 9 m de haut) qui
+		// pointent vers l'avant.
+		float vers_milieu = abs(fract(u / 3.0) - 0.5) * 3.0;
+		float fleches = step(fract((d + vers_milieu * 1.5) / 24.0), 0.04) * step(6.0, u) * step(u, 9.0);
+		float lumiere = max(traits * 0.6, fleches);
+		albedo = mix(metal, teinte, lumiere * 0.6);
+		emission = teinte * (traits * 0.5 + fleches * 1.0);
+	}
 	if (lumineuse) {
 		// Les pointillés brillent, et une vague plus forte court vers l'avant.
 		float vague = pow(0.5 + 0.5 * sin((d - temps * vitesse_vagues) * 0.035), 8.0);

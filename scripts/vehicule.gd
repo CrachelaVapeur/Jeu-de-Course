@@ -54,7 +54,9 @@ signal atterrissage(force: float)
 
 @export_group("Apparence")
 ## Où se trouvent les yeux du pilote, dans le repère de la carrosserie (vue cockpit).
-@export var position_cockpit := Vector3(0.0, 0.55, 0.35)
+@export var position_cockpit := Vector3(0.0, 0.62, 0.45)
+## Caméra posée sur le nez du bolide (vue capot : on ne voit plus la voiture).
+@export var position_capot := Vector3(0.0, 0.3, -2.3)
 ## Matière (toon) appliquée au modèle 3D. Les couleurs viennent des couleurs de sommets du modèle.
 @export var matiere_modele: Material
 
@@ -72,6 +74,19 @@ signal atterrissage(force: float)
 @export var controle_en_l_air := 0.35  ## part de la direction qu'on garde pendant un saut
 @export var hauteur_chute := -30.0  ## en dessous de cette altitude, on réapparaît
 @export var perte_choc := 0.75  ## part de la vitesse perdue en percutant un bloc de face
+
+@export_group("Half-pipe (vrais circuits)")
+## Sur une paroi penchée, la pente fait tourner le bolide vers l'intérieur,
+## comme dans un vrai virage relevé : plus on va vite, plus on monte haut sur
+## la paroi, et c'est elle qui fait le virage. 1 = comme en vrai, 0 = rien
+## (plus que 1 : la paroi tient mieux qu'en vrai, c'est un jeu d'arcade).
+@export var effet_paroi := 2.5
+@export var rotation_paroi_max := 1.5  ## rad/s : la paroi ne fait jamais tourner plus vite
+## La paroi guide aussi : si on y monte ou descend en biais, le nez revient
+## doucement à l'horizontale de la paroi (sinon on rebondirait d'un bord à
+## l'autre). Plus c'est grand, plus on reste à sa hauteur.
+@export var guidage_paroi := 5.0
+@export var collage_paroi := 4.0  ## m/s : on est plaqué contre la paroi pour ne pas la quitter
 
 @export_group("Poids et direction (vrais circuits)")
 @export var raideur_volant := 9.0  ## plus c'est petit, plus le volant met de temps à tourner
@@ -287,9 +302,15 @@ func ratio_vitesse() -> float:
 	return vitesse / vitesse_max
 
 
-## Le point de vue du pilote : il suit la carrosserie (pente, roulis, dérapage).
-func repere_cockpit() -> Transform3D:
-	return _carrosserie.global_transform * Transform3D(Basis.IDENTITY, position_cockpit)
+## Le point de vue du pilote (ou du nez, si « capot ») : il suit la
+## carrosserie (pente, roulis, dérapage).
+func repere_cockpit(capot := false) -> Transform3D:
+	return _carrosserie.global_transform * Transform3D(Basis.IDENTITY, position_capot if capot else position_cockpit)
+
+
+## La direction du « haut » du sol sous le bolide (penchée sur une paroi).
+func normale_sol() -> Vector3:
+	return _normale_sol
 
 
 func vitesse_kmh() -> float:
@@ -426,18 +447,23 @@ func _avancer_tout_droit(delta: float) -> void:
 
 
 func _avancer_sur_le_relief(delta: float) -> void:
-	var avant := Vector3(-sin(_cap_trajectoire), 0.0, -cos(_cap_trajectoire))
 	var en_l_air := not is_on_floor()
+	if not en_l_air:
+		_normale_sol = get_floor_normal()
+		_tourner_avec_la_paroi(delta)
+	var avant := Vector3(-sin(_cap_trajectoire), 0.0, -cos(_cap_trajectoire))
 
 	if not en_l_air:
 		# On avance le long du sol : la direction est « couchée » sur la pente.
-		_normale_sol = get_floor_normal()
 		var le_long_du_sol := (avant - _normale_sol * avant.dot(_normale_sol)).normalized()
 		# Ça freine en montée et ça accélère en descente.
 		# (Sans jamais changer de sens tout seul : on ne recule pas dans une côte.)
 		var nouvelle := vitesse - gravite * effet_pente * le_long_du_sol.y * delta
 		vitesse = maxf(nouvelle, 0.0) if vitesse >= 0.0 else minf(nouvelle, 0.0)
 		velocity = le_long_du_sol * vitesse
+		if _normale_sol.y < 0.97:
+			# Sur une paroi : on reste plaqué contre elle (pas de petit saut).
+			velocity -= _normale_sol * collage_paroi
 	else:
 		# En l'air : on garde l'élan, la gravité nous ramène vers le sol.
 		velocity.x = avant.x * vitesse
@@ -454,14 +480,50 @@ func _avancer_sur_le_relief(delta: float) -> void:
 	_gerer_chocs(avant)
 
 
+## Dans un virage relevé, la paroi pousse le bolide vers l'intérieur : il
+## tourne tout seul. En vrai, pour une pente d'angle θ, on tourne de
+## gravité × tan(θ) / vitesse radians par seconde. Trop vite pour le virage,
+## on monte sur la paroi, plus raide, qui fait tourner plus fort ; trop
+## lent, on redescend : on trouve tout seul la bonne hauteur.
+func _tourner_avec_la_paroi(delta: float) -> void:
+	if vitesse < 5.0 or _normale_sol.y < 0.1:
+		return
+	var droite := Vector3(cos(_cap_trajectoire), 0.0, -sin(_cap_trajectoire))
+	var avant := Vector3(-sin(_cap_trajectoire), 0.0, -cos(_cap_trajectoire))
+	var penche := _normale_sol.dot(droite)  # > 0 : le sol penche vers la droite
+	var pente := penche / _normale_sol.y  # tan(θ)
+	var rotation_paroi := -gravite * effet_paroi * pente / maxf(vitesse, 20.0)
+	# Guidage : « en_biais » < 0 quand on monte sur la paroi, > 0 quand on
+	# en descend. On tourne pour revenir le long de la paroi.
+	var en_biais := _normale_sol.dot(avant)
+	rotation_paroi += guidage_paroi * en_biais * signf(penche)
+	# Seulement sur une vraie paroi (plus de 12° environ) : les routes
+	# simplement penchées dans les virages (dévers) restent comme avant.
+	rotation_paroi *= smoothstep(0.2, 0.35, absf(penche))
+	rotation_paroi = clampf(rotation_paroi, -rotation_paroi_max, rotation_paroi_max)
+	_cap_trajectoire += rotation_paroi * delta
+	_cap += rotation_paroi * delta
+	rotation.y = _cap
+
+
 func _gerer_chocs(avant: Vector3) -> void:
 	var touche := false
+	var plus_de_face := 0.0
+	# Au-delà de cette pente, ce n'est plus un sol (une paroi de half-pipe
+	# reste un sol jusqu'à « floor_max_angle »). Un plafond ou le rebord
+	# enroulé d'un half-pipe (normale vers le bas) compte comme un mur.
+	var sol_min := cos(floor_max_angle) - 0.02
+	var centre := global_position + Vector3.UP * 0.55  # le centre de la forme de collision
 	for i in get_slide_collision_count():
-		var normale := get_slide_collision(i).get_normal()
-		if absf(normale.y) > 0.6:
+		var collision := get_slide_collision(i)
+		var normale := collision.get_normal()
+		if normale.y > sol_min:
 			continue  # c'est le sol, pas un obstacle
+		if (collision.get_position() - centre).dot(_normale_sol) < -0.3:
+			continue  # touché par-dessous : c'est encore le sol (vu de l'envers)
 		touche = true
 		var de_face := -avant.dot(normale)  # 1 = de face, 0 = on frotte
+		plus_de_face = maxf(plus_de_face, de_face)
 		if de_face > 0.1 and not _contact_mur:
 			mur_touche.emit(vitesse * de_face)
 			vitesse *= 1.0 - perte_choc * de_face
@@ -474,9 +536,18 @@ func _gerer_chocs(avant: Vector3) -> void:
 				_omega = 0.0
 				_grip = 1.0
 				en_derapage = false
-	if touche and _contact_mur:
+		elif de_face > 0.02 and de_face < 0.5 and _contact_mur:
+			# On frotte déjà le long du mur : le nez suit doucement la paroi,
+			# comme contre un rail, sans perdre de vitesse.
+			var le_long := avant - normale * avant.dot(normale)
+			if le_long.length() > 0.1:
+				var ecart := angle_difference(_cap_trajectoire, atan2(-le_long.x, -le_long.z)) * 0.5
+				_cap_trajectoire += ecart
+				_cap += ecart
+	if touche and _contact_mur and plus_de_face > 0.3:
 		# Toujours collé à l'obstacle : on ne peut pas aller plus vite que ce
 		# qu'on avance vraiment (sinon le compteur s'affole contre un bloc).
+		# Pas quand on glisse le long d'un mur : là, on garde sa vitesse.
 		vitesse = minf(vitesse, maxf(get_real_velocity().dot(avant), 0.0) + 5.0)
 	_contact_mur = touche
 
@@ -579,7 +650,10 @@ func _animer(delta: float) -> void:
 	# La voiture roule sur ses roues : petites vibrations de suspension (plus fortes
 	# à grande vitesse), léger roulis dans les virages, nez qui se lève en boost.
 	var allure := clampf(ratio_vitesse(), 0.0, 1.0)
-	_carrosserie.position.y = 0.7 + (sin(_temps * 37.0) * 0.004 + sin(_temps * 13.0) * 0.003) * allure
+	# Les roues restent posées sur le sol, même très penché (paroi de
+	# half-pipe) : la carrosserie se place le long de la normale du sol.
+	var suspension := (sin(_temps * 37.0) * 0.004 + sin(_temps * 13.0) * 0.003) * allure
+	_carrosserie.position = Vector3(0.0, 0.55, 0.0) + n.normalized() * (0.15 + suspension)
 	_carrosserie.rotation.z = lerpf(_carrosserie.rotation.z, roulis_sol + virage * 0.07 * allure, lissage)
 	_carrosserie.rotation.x = lerpf(_carrosserie.rotation.x, tangage_sol + (0.04 if en_boost else 0.0), lissage)
 

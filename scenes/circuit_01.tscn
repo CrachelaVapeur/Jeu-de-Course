@@ -201,5 +201,5 @@ theme_override_colors/font_outline_color = Color(0.05, 0.02, 0.05, 1)
 theme_override_constants/outline_size = 8
 theme_override_font_sizes/font_size = 20
 text = "Z / ↑ : accélérer      S / ↓ : freiner (à l'arrêt : reculer)      Q D / ← → : tourner
-Maj : BOOST   Espace : DÉRAPER   C : vue cockpit   R : recommencer au départ
+Maj : BOOST   Espace : DÉRAPER   C : changer de vue   R : recommencer au départ
 (manette : gâchettes, stick gauche, A, Y, Start)"

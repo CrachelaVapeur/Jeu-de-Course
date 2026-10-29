@@ -16,9 +16,17 @@ extends DecorBase
 @export var nombre_batiments := 220
 @export var epaisseur_route := 1.2
 @export var hauteur_muret := 1.0
-## Largeur des bords relevés (obstacle « bord_releve ») : la route remonte en
-## arrondi sur cette distance de chaque côté, comme une piste de bobsleigh.
+## Virages en half-pipe (obstacle « bord_releve ») : une paroi courbe
+## s'ajoute de chaque côté de la route, comme une piste de bobsleigh.
+## Largeur (vue de dessus) que la paroi extérieure ajoute à la route.
 @export var largeur_bord_releve := 13.0
+## Hauteur de la paroi extérieure, si l'obstacle ne donne pas « hauteur ».
+@export var hauteur_bord_releve := 14.0
+## Part de la largeur de la route qui reste à plat au fond du U : le reste
+## de la route remonte déjà en arrondi, comme dans un vrai half-pipe.
+@export var fond_plat := 0.4
+## La paroi intérieure est plus basse et plus étroite : cette part de l'extérieure.
+@export var part_interieur := 0.35
 ## Lissage du tracé, en mètres : les virages deviennent des courbes régulières
 ## (un ruban) au lieu d'une suite de petits coudes. 0 = pas de lissage.
 @export var lissage_trace := 18.0
@@ -43,7 +51,9 @@ var ligne_arrivee := 0.0  ## distance de la ligne d'arrivée
 var _donnees: GDScript
 var _distances_points: Array[float] = []
 var _reglages_lisses := PackedVector2Array()  # largeur et dévers tous les PAS_REGLAGES mètres
+var _cotes_exterieurs := PackedVector2Array()  # half-pipe : à quel point chaque côté est l'extérieur (gauche, droite)
 const PAS_REGLAGES := 2.0
+const SOMMETS_PAROI := 12  # sommets de l'arrondi d'une paroi de half-pipe
 var _tranches: Array[Dictionary] = []
 var _hasard := RandomNumberGenerator.new()
 
@@ -180,6 +190,7 @@ func _construire_courbe() -> void:
 		_distances_points[-1] = longueur
 	if lissage_reglages > 0.0:
 		_reglages_lisses = _lisser_valeurs(longueur, lissage_reglages)
+	_preparer_cotes_exterieurs()
 
 	var texte := "%s : %d m." % [_donnees.NOM, roundi(longueur)]
 	# Pour un petit circuit, on affiche aussi la distance de chaque point.
@@ -301,18 +312,66 @@ func _cadre(d: float) -> Dictionary:
 	var droite := avant.cross(Vector3.UP).normalized()
 	droite = droite.rotated(avant, deg_to_rad(reglages.y))
 	var haut := droite.cross(avant).normalized()
-	return {"d": d, "pos": pos, "avant": avant, "droite": droite, "haut": haut, "largeur": reglages.x, "releve": _releve_a(d)}
+	return {"d": d, "pos": pos, "avant": avant, "droite": droite, "haut": haut, "largeur": reglages.x, "releves": _releves_a(d)}
 
 
-## La hauteur des bords relevés à cette distance (0 = route plate). Elle
-## monte et redescend en douceur sur les 60 premiers et derniers mètres.
-func _releve_a(d: float) -> float:
+## Les parois du half-pipe à cette distance : x = hauteur à gauche,
+## y = hauteur à droite, z = largeur à gauche, w = largeur à droite
+## (tout à 0 = route plate). La paroi extérieure du virage est la plus
+## haute. Elles montent et redescendent en douceur sur 80 mètres.
+func _releves_a(d: float) -> Vector4:
 	for o in _donnees.OBSTACLES:
 		if o.type == "bord_releve" and d > o.a and d < o.a + o.longueur:
-			var entree := smoothstep(o.a, o.a + 60.0, d)
-			var sortie := 1.0 - smoothstep(o.a + o.longueur - 60.0, o.a + o.longueur, d)
-			return minf(entree, sortie) * float(o.get("hauteur", 4.0))
-	return 0.0
+			var entree := smoothstep(o.a, o.a + 80.0, d)
+			var sortie := 1.0 - smoothstep(o.a + o.longueur - 80.0, o.a + o.longueur, d)
+			var force := minf(entree, sortie)
+			var hauteur: float = float(o.get("hauteur", hauteur_bord_releve)) * force
+			var largeur := largeur_bord_releve * force
+			var exterieur := _cote_exterieur_a(d)
+			var gauche := lerpf(part_interieur, 1.0, exterieur.x)
+			var droite := lerpf(part_interieur, 1.0, exterieur.y)
+			# L'intérieur est aussi moins large : sa paroi reste douce (pente
+			# d'environ 35° en haut, contre 69° à l'extérieur).
+			return Vector4(hauteur * gauche, hauteur * droite,
+				largeur * lerpf(0.55, 1.0, exterieur.x), largeur * lerpf(0.55, 1.0, exterieur.y))
+	return Vector4.ZERO
+
+
+## Pour chaque côté, de 0 (intérieur) à 1 (extérieur d'un virage). On
+## regarde 80 m avant et après : dans un S, les deux parois restent hautes
+## pendant qu'on passe d'un côté à l'autre (sinon la paroi s'abaisserait
+## sous le bolide). Calculé une fois pour tout le circuit.
+func _preparer_cotes_exterieurs() -> void:
+	var pas_table := 4.0
+	var nombre := ceili(longueur / pas_table) + 1
+	var brut := PackedVector2Array()
+	for i in nombre:
+		# > 0 : on tourne à gauche, l'extérieur est à droite.
+		var sens := clampf(_courbure(i * pas_table) * 250.0, -1.0, 1.0)
+		brut.append(Vector2(maxf(-sens, 0.0), maxf(sens, 0.0)))
+	var fenetre := roundi(80.0 / pas_table)
+	_cotes_exterieurs.resize(nombre)
+	for i in nombre:
+		var plus_fort := Vector2.ZERO
+		for j in range(maxi(i - fenetre, 0), mini(i + fenetre, nombre - 1) + 1):
+			plus_fort = plus_fort.max(brut[j])
+		_cotes_exterieurs[i] = plus_fort
+
+
+func _cote_exterieur_a(d: float) -> Vector2:
+	if _cotes_exterieurs.is_empty():
+		return Vector2.ZERO
+	var u := clampf(d / 4.0, 0.0, _cotes_exterieurs.size() - 1.0)
+	var i := mini(floori(u), _cotes_exterieurs.size() - 2)
+	return _cotes_exterieurs[i].lerp(_cotes_exterieurs[i + 1], u - i)
+
+
+## Combien la route tourne à cet endroit, en radians par mètre
+## (> 0 : vers la gauche), mesuré sur 80 mètres pour rester régulier.
+func _courbure(d: float) -> float:
+	var avant := _echantillon(d) - _echantillon(d - 40.0)
+	var apres := _echantillon(d + 40.0) - _echantillon(d)
+	return Vector3(avant.x, 0.0, avant.z).signed_angle_to(Vector3(apres.x, 0.0, apres.z), Vector3.UP) / 40.0
 
 
 func _echantillon(d: float) -> Vector3:
@@ -351,9 +410,12 @@ func _reglage_point(p: Array) -> Vector2:
 	return Vector2(largeur, devers)
 
 
-## Largeur de la route à l'endroit le plus proche d'un point vu de dessus.
+## Largeur de la route à l'endroit le plus proche d'un point vu de dessus
+## (parois du half-pipe comprises).
 func largeur_route_pres(p: Vector2) -> float:
-	return _reglages_a(courbe.get_closest_offset(Vector3(p.x, 0.0, p.y))).x
+	var d := courbe.get_closest_offset(Vector3(p.x, 0.0, p.y))
+	var r := _releves_a(d)
+	return _reglages_a(d).x + r.z + r.w
 
 
 func _obstacle_a(type: String, d: float, cote := "") -> bool:
@@ -375,33 +437,87 @@ func couleur_zone(d: float) -> Color:
 	return couleur
 
 
+## Le bord de la route d'un côté (cote = -1 : gauche, 1 : droite). Dans un
+## half-pipe, c'est le haut de la paroi.
 func _bord(t: Dictionary, cote: float) -> Vector3:
-	return t.pos + t.droite * (t.largeur * 0.5 * cote) + t.haut * t.releve
+	var r: Vector4 = t.releves
+	var hauteur := r.x if cote < 0.0 else r.y
+	var largeur := r.z if cote < 0.0 else r.w
+	return t.pos + t.droite * ((t.largeur * 0.5 + largeur) * cote) + t.haut * hauteur
+
+
+func _a_des_parois(t: Dictionary) -> bool:
+	return t.releves != Vector4.ZERO
 
 
 ## La route vue en coupe, de gauche à droite : [position, normale, écart au
-## centre] pour chaque sommet. Plate : ses deux bords. Avec des bords
-## relevés : un plat au milieu, puis de chaque côté une courbe qui remonte.
+## centre] pour chaque sommet. Plate : ses deux bords. En half-pipe : la
+## paroi de gauche (du haut vers le bas), la route, puis celle de droite.
 func _coupe(t: Dictionary, avec_bords: bool) -> Array:
 	var demi: float = t.largeur * 0.5
 	if not avec_bords:
 		return [[_bord(t, -1.0), t.haut, -demi], [_bord(t, 1.0), t.haut, demi]]
-	var bord := minf(largeur_bord_releve, demi * 0.45)
-	var ecarts: Array[float] = []
-	for k in 5:
-		ecarts.append(-demi + bord * k / 4.0)
-	for k in 5:
-		ecarts.append(demi - bord + bord * k / 4.0)
-	var coupe := []
-	for x in ecarts:
-		# Hauteur en arc de parabole : nulle (et à plat) au bout du plat du
-		# milieu, « releve » au bord de la route.
-		var u := clampf((absf(x) - (demi - bord)) / bord, 0.0, 1.0)
-		var h: float = t.releve * u * u
-		var pente: float = signf(x) * 2.0 * t.releve * u / bord
-		var normale: Vector3 = (t.haut - t.droite * pente).normalized()
-		coupe.append([t.pos + t.droite * x + t.haut * h, normale, x])
+	var r: Vector4 = t.releves
+	var coupe := _paroi(t, -1.0, r.x, r.z)
+	coupe.reverse()
+	coupe.append_array(_paroi(t, 1.0, r.y, r.w))
 	return coupe
+
+
+## Le rebord enroulé au-dessus d'une paroi : un petit arc (jusqu'à 4 m de
+## rayon) qui part du haut de la paroi, monte à la verticale puis repasse
+## au-dessus du U. Il grandit avec la paroi : 1 m de haut au début, comme le
+## muret qu'il remplace.
+func _enroulement(t: Dictionary, cote: float) -> Array[Vector3]:
+	var r: Vector4 = t.releves
+	var hauteur := r.x if cote < 0.0 else r.y
+	var largeur := r.z if cote < 0.0 else r.w
+	var demi: float = t.largeur * 0.5
+	var etendue := demi - demi * fond_plat + largeur
+	var rayon := (etendue * etendue + hauteur * hauteur) / (2.0 * hauteur)
+	var depart := asin(clampf(etendue / rayon, 0.0, 1.0))
+	var haut_paroi := _bord(t, cote)
+	var cote_dir: Vector3 = t.droite * cote
+	var taille := smoothstep(0.0, hauteur_bord_releve, hauteur)
+	var petit_rayon := lerpf(0.55, 4.0, taille)
+	# Petit, il s'enroule moins : pas de toit sous lequel se coincer.
+	var fin := deg_to_rad(lerpf(95.0, 150.0, taille))
+	# Vers le centre de la petite courbe (perpendiculaire à la paroi).
+	var centre: Vector3 = haut_paroi + (t.haut * cos(depart) - cote_dir * sin(depart)) * petit_rayon
+	var points: Array[Vector3] = []
+	for k in 7:
+		var angle := lerpf(depart, maxf(fin, depart), k / 6.0)
+		points.append(centre - (t.haut * cos(angle) - cote_dir * sin(angle)) * petit_rayon)
+	return points
+
+
+## Une paroi du half-pipe, du fond plat jusqu'en haut (« largeur » : ce
+## qu'elle ajoute au-delà du bord de la route). C'est un arc de cercle : à
+## plat en bas (on y entre sans à-coup), de plus en plus raide en montant.
+## L'écart au centre est mesuré le long de la paroi (pour que les motifs du
+## shader ne soient pas étirés).
+func _paroi(t: Dictionary, cote: float, hauteur: float, largeur: float) -> Array:
+	var demi: float = t.largeur * 0.5
+	var fond := demi * fond_plat
+	var etendue := demi - fond + largeur
+	var points := []
+	for k in SOMMETS_PAROI + 1:
+		var f := float(k) / SOMMETS_PAROI
+		var u := etendue * f
+		var h := 0.0
+		var angle := 0.0
+		var le_long := u
+		if hauteur > 0.001:
+			# Le cercle qui passe par le bord du fond plat (à plat) et par le
+			# haut de la paroi : rayon = (étendue² + hauteur²) / (2 × hauteur).
+			var rayon := (etendue * etendue + hauteur * hauteur) / (2.0 * hauteur)
+			angle = asin(clampf(etendue / rayon, 0.0, 1.0)) * f
+			u = rayon * sin(angle)
+			h = rayon * (1.0 - cos(angle))
+			le_long = rayon * angle
+		var normale: Vector3 = t.haut * cos(angle) - t.droite * (sin(angle) * cote)
+		points.append([t.pos + t.droite * ((fond + u) * cote) + t.haut * h, normale, (fond + le_long) * cote])
+	return points
 
 
 # --- Route et murets -------------------------------------------------------------
@@ -417,13 +533,13 @@ func _construire_route() -> void:
 		var b: Dictionary = _tranches[i + 1]
 		if _obstacle_a("trou", (a.d + b.d) * 0.5):
 			continue
-		var al := _bord(a, -1.0)
-		var ar := _bord(a, 1.0)
-		var bl := _bord(b, -1.0)
-		var br := _bord(b, 1.0)
 		var uv_a: float = a.largeur * 0.5
 		var uv_b: float = b.largeur * 0.5
 		var milieu: float = (a.d + b.d) * 0.5
+		# Les deux tranches doivent avoir le même nombre de sommets.
+		var avec_bords := _a_des_parois(a) or _a_des_parois(b)
+		var coupe_a := _coupe(a, avec_bords)
+		var coupe_b := _coupe(b, avec_bords)
 		if _obstacle_a("cratere", milieu):
 			_construire_sol_cratere(dessus, a, b, milieu)
 		else:
@@ -432,9 +548,6 @@ func _construire_route() -> void:
 			dessus.set_color(couleur_zone(milieu).srgb_to_linear())
 			# Chaque sommet a la normale de sa propre tranche : la lumière
 			# glisse d'une tranche à l'autre et on ne voit plus les facettes.
-			var avec_bords: bool = a.releve > 0.0 or b.releve > 0.0
-			var coupe_a := _coupe(a, avec_bords)
-			var coupe_b := _coupe(b, avec_bords)
 			for k in coupe_a.size() - 1:
 				var g_a: Array = coupe_a[k]
 				var d_a: Array = coupe_a[k + 1]
@@ -446,16 +559,31 @@ func _construire_route() -> void:
 					[g_a[1], d_a[1], d_b[1], g_b[1]])
 
 		# L'épaisseur de la route : visible au bord des trous et des ravins.
-		var ea: Vector3 = a.haut * epaisseur_route
-		var eb: Vector3 = b.haut * epaisseur_route
-		_quad(dessous, [al - ea, al, bl, bl - eb], -a.droite)
-		_quad(dessous, [ar, ar - ea, br - eb, br], a.droite)
-		_quad(dessous, [ar - ea, al - ea, bl - eb, br - eb], -a.haut)
-		# Les bouts de route au bord d'un trou sont fermés.
-		if _obstacle_a("trou", b.d + pas * 0.5):
-			_quad(dessous, [bl - eb, bl, br, br - eb], b.avant)
-		if i > 0 and _obstacle_a("trou", a.d - pas * 0.5):
-			_quad(dessous, [ar - ea, ar, al, al - ea], -a.avant)
+		# Le dessous suit la forme du dessus (aussi sous les parois).
+		var n := coupe_a.size()
+		var fin_trou := _obstacle_a("trou", b.d + pas * 0.5)
+		var debut_trou := i > 0 and _obstacle_a("trou", a.d - pas * 0.5)
+		for k in n:
+			var pa: Vector3 = coupe_a[k][0]
+			var pb: Vector3 = coupe_b[k][0]
+			var sa: Vector3 = pa - coupe_a[k][1] * epaisseur_route
+			var sb: Vector3 = pb - coupe_b[k][1] * epaisseur_route
+			if k == 0 or k == n - 1:
+				# Les flancs, sous le bord gauche et le bord droit.
+				var cote := -1.0 if k == 0 else 1.0
+				_quad(dessous, [sa, pa, pb, sb], a.droite * cote)
+			if k == n - 1:
+				continue
+			var pa2: Vector3 = coupe_a[k + 1][0]
+			var pb2: Vector3 = coupe_b[k + 1][0]
+			var sa2: Vector3 = pa2 - coupe_a[k + 1][1] * epaisseur_route
+			var sb2: Vector3 = pb2 - coupe_b[k + 1][1] * epaisseur_route
+			_quad(dessous, [sa2, sa, sb, sb2], -(coupe_a[k][1] + coupe_a[k + 1][1]).normalized())
+			# Les bouts de route au bord d'un trou sont fermés.
+			if fin_trou:
+				_quad(dessous, [sb, pb, pb2, sb2], b.avant)
+			if debut_trou:
+				_quad(dessous, [sa2, pa2, pa, sa], -a.avant)
 
 	var matiere_route := ShaderMaterial.new()
 	matiere_route.shader = SHADER_ROUTE
@@ -513,6 +641,29 @@ func _construire_murets() -> void:
 		if _obstacle_a("trou", milieu):
 			continue
 		for cote in [-1.0, 1.0]:
+			var parois_a: Vector4 = a.releves
+			var parois_b: Vector4 = b.releves
+			if minf(parois_a.x if cote < 0.0 else parois_a.y, parois_b.x if cote < 0.0 else parois_b.y) > 0.01:
+				# En haut d'un half-pipe, le muret devient un rebord qui
+				# s'enroule vers l'intérieur, comme une vague. Même lancé en
+				# boost, on ne peut pas grimper par-dessus : on est renvoyé
+				# dans le U, en glissant.
+				var bord_a := _enroulement(a, cote)
+				var bord_b := _enroulement(b, cote)
+				var vers_dedans: Vector3 = a.haut - a.droite * cote
+				for k in bord_a.size() - 1:
+					var p := [bord_a[k], bord_a[k + 1], bord_b[k + 1], bord_b[k]]
+					_quad(murets, p, vers_dedans)
+					_quad(murets, p, -vers_dedans)  # visible aussi de dehors
+				# Un néon tout au bout de la vague.
+				var bout_a: Vector3 = bord_a[-1]
+				var bout_b: Vector3 = bord_b[-1]
+				var avant_a: Vector3 = bord_a[-2]
+				var avant_b: Vector3 = bord_b[-2]
+				neons.set_color(couleur_zone(milieu).srgb_to_linear())
+				_quad(neons, [avant_a.lerp(bout_a, 0.5), bout_a, bout_b, avant_b.lerp(bout_b, 0.5)], -vers_dedans)
+				_quad(neons, [avant_a.lerp(bout_a, 0.5), bout_a, bout_b, avant_b.lerp(bout_b, 0.5)], vers_dedans)
+				continue
 			if _obstacle_a("sans_muret", milieu, "gauche" if cote < 0.0 else "droite"):
 				continue
 			if _obstacle_a("cratere", milieu):
