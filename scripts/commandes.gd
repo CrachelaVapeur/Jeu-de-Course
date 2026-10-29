@@ -12,8 +12,15 @@ const COMMANDES := {
 	"droite": {"touches": [KEY_D, KEY_RIGHT], "axe": [JOY_AXIS_LEFT_X, 1.0]},
 	"boost": {"touches": [KEY_SHIFT], "bouton": JOY_BUTTON_A},
 	"deraper": {"touches": [KEY_SPACE, KEY_X], "bouton": JOY_BUTTON_RIGHT_SHOULDER},
-	"recommencer": {"touches": [KEY_R], "bouton": JOY_BUTTON_START},
-	"camera": {"touches": [KEY_C], "bouton": JOY_BUTTON_Y},  # vue poursuite / cockpit / capot
+	"recommencer": {"touches": [KEY_R]},  # sur manette : dans le menu de pause (Start)
+	"camera": {"touches": [KEY_C], "bouton": JOY_BUTTON_Y},  # vue suivante (poursuite, lointaine, cockpit, capot)
+	# Une vue directement : croix directionnelle ou touches 1 à 4.
+	"vue_loin": {"touches": [KEY_1], "bouton": JOY_BUTTON_DPAD_UP},
+	"vue_pres": {"touches": [KEY_2], "bouton": JOY_BUTTON_DPAD_RIGHT},
+	"vue_cockpit": {"touches": [KEY_3], "bouton": JOY_BUTTON_DPAD_LEFT},
+	"vue_capot": {"touches": [KEY_4], "bouton": JOY_BUTTON_DPAD_DOWN},
+	"pause": {"touches": [KEY_ESCAPE], "bouton": JOY_BUTTON_START},  # menu de pause (voir menu_pause.gd)
+	"carte": {"touches": [KEY_M], "bouton": JOY_BUTTON_BACK},  # carte du circuit (voir carte.gd)
 }
 
 
@@ -38,3 +45,12 @@ func _ready() -> void:
 			var ev_bouton := InputEventJoypadButton.new()
 			ev_bouton.button_index = def["bouton"]
 			InputMap.action_add_event(nom, ev_bouton)
+
+	# Menus à la manette : Godot ne met aucun bouton de manette dans « valider » ni « retour »
+	# (seulement Entrée et Échap). Comme sur PC : le bouton du BAS valide (A Xbox, B Nintendo,
+	# croix PlayStation), celui de DROITE revient en arrière (voir boutons.gd).
+	for paire in [["ui_accept", JOY_BUTTON_A], ["ui_cancel", JOY_BUTTON_B]]:
+		var ev := InputEventJoypadButton.new()
+		ev.button_index = paire[1]
+		if not InputMap.action_has_event(paire[0], ev):
+			InputMap.action_add_event(paire[0], ev)

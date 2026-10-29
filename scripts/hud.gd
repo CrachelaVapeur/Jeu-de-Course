@@ -7,6 +7,21 @@ extends CanvasLayer
 @onready var _jauge: ProgressBar = $Jauge
 @onready var _lignes: ColorRect = $LignesVitesse
 @onready var _tunnel: ColorRect = $Tunnel
+@onready var _g: Node = get_node("/root/Graphismes")  # l'autoload des réglages
+
+
+func _ready() -> void:
+	# Le guide en icônes (coin en haut à gauche) remplace l'ancienne aide en texte.
+	add_child(preload("res://scripts/guide_commandes.gd").new())
+	($Aide as Label).visible = false
+	# La carte (Select / M) puis le menu de pause (Start / Échap), par-dessus tout le reste.
+	var carte: Control = preload("res://scripts/carte.gd").new()
+	carte.vehicule = vehicule
+	carte.circuit = get_parent().get_node_or_null("Circuit")
+	add_child(carte)
+	var pause: Control = preload("res://scripts/menu_pause.gd").new()
+	pause.vehicule = vehicule
+	add_child(pause)
 
 
 func _process(delta: float) -> void:
@@ -24,5 +39,7 @@ func _process(delta: float) -> void:
 	matiere.set_shader_parameter("intensite", lerpf(actuelle, intensite, 1.0 - exp(-6.0 * delta)))
 
 	# Vision en tunnel pendant le boost : le calque n'est affiché que quand l'effet est actif.
-	_tunnel.visible = vehicule.distorsion > 0.005
+	# Les deux effets plein écran se coupent dans les réglages graphiques.
+	_lignes.visible = _g.effets
+	_tunnel.visible = _g.effets and vehicule.distorsion > 0.005
 	(_tunnel.material as ShaderMaterial).set_shader_parameter("intensite", vehicule.distorsion)
