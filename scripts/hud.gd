@@ -10,7 +10,7 @@ extends CanvasLayer
 
 
 func _process(delta: float) -> void:
-	_compteur.text = "%d km/h" % roundi(vehicule.vitesse_kmh())
+	_compteur.text = "%d km/h" % absi(roundi(vehicule.vitesse_kmh()))
 	_jauge.visible = not vehicule.boost_infini
 	_jauge.max_value = vehicule.jauge_max
 	_jauge.value = vehicule.jauge_boost

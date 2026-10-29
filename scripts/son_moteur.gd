@@ -37,7 +37,7 @@ func _process(delta: float) -> void:
 	if _lecture == null:
 		return
 
-	var ratio := vehicule.ratio_vitesse()
+	var ratio := absf(vehicule.ratio_vitesse())
 	var frequence_voulue := frequence_ralenti + (frequence_max - frequence_ralenti) * minf(ratio, 2.3) / 2.3
 	_frequence = lerpf(_frequence, frequence_voulue, 1.0 - exp(-8.0 * delta))
 	var souffle := 0.4 if vehicule.en_boost else 0.04 + ratio * 0.06
