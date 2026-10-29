@@ -22,12 +22,15 @@ signal teleporte(decalage: Vector3)
 signal atterrissage(force: float)
 
 @export_group("Vitesse (en mètres par seconde, ×3.6 pour des km/h)")
-@export var vitesse_max := 75.0
+@export var vitesse_max := 85.0  ## environ 306 km/h sans boost
 @export var vitesse_boost := 146.0  ## environ 525 km/h : la vitesse la plus haute du jeu
 @export var acceleration := 26.0
 @export var acceleration_boost := 82.0  ## atteinte au bout de la montée du boost
 @export var freinage := 60.0
 @export var frottement := 8.0
+## Marche arrière : on reste sur « freiner » une fois arrêté.
+@export var vitesse_marche_arriere := 14.0  ## environ 50 km/h
+@export var acceleration_marche_arriere := 12.0
 
 @export_group("Direction")
 @export var vitesse_rotation := 1.1  ## en radians par seconde
@@ -50,6 +53,8 @@ signal atterrissage(force: float)
 @export var freinage_apres_boost := 48.0
 
 @export_group("Apparence")
+## Où se trouvent les yeux du pilote, dans le repère de la carrosserie (vue cockpit).
+@export var position_cockpit := Vector3(0.0, 0.55, 0.35)
 ## Matière (toon) appliquée au modèle 3D. Les couleurs viennent des couleurs de sommets du modèle.
 @export var matiere_modele: Material
 
@@ -282,6 +287,11 @@ func ratio_vitesse() -> float:
 	return vitesse / vitesse_max
 
 
+## Le point de vue du pilote : il suit la carrosserie (pente, roulis, dérapage).
+func repere_cockpit() -> Transform3D:
+	return _carrosserie.global_transform * Transform3D(Basis.IDENTITY, position_cockpit)
+
+
 func vitesse_kmh() -> float:
 	return vitesse * 3.6
 
@@ -312,15 +322,20 @@ func _conduire(delta: float) -> void:
 			# Après un boost, on redescend doucement : la vitesse « reste » un peu.
 			vitesse = move_toward(vitesse, vitesse_max, freinage_apres_boost * delta)
 		elif gaz > 0.0:
-			vitesse = move_toward(vitesse, vitesse_max * gaz, acceleration * delta)
-		else:
+			# En marche arrière, accélérer commence par freiner.
+			var poussee_avant := acceleration if vitesse >= 0.0 else freinage
+			vitesse = move_toward(vitesse, vitesse_max * gaz, poussee_avant * delta)
+		elif frein <= 0.0:
 			vitesse = move_toward(vitesse, 0.0, frottement * delta)
 
-	if frein > 0.0:
+	if frein > 0.0 and gaz <= 0.0 and vitesse <= 0.0:
+		# Arrêté et toujours sur le frein : on recule, comme dans la plupart des jeux.
+		vitesse = move_toward(vitesse, -vitesse_marche_arriere * frein, acceleration_marche_arriere * delta)
+	elif frein > 0.0:
 		vitesse = move_toward(vitesse, 0.0, freinage * frein * delta)
 
 	# On tourne moins vite à très haute vitesse, sinon c'est ingérable.
-	var maniabilite := clampf(vitesse / 15.0, 0.0, 1.0) / (1.0 + ratio_vitesse() * 0.6)
+	var maniabilite := clampf(absf(vitesse) / 15.0, 0.0, 1.0) / (1.0 + absf(ratio_vitesse()) * 0.6)
 	if piste_droite:
 		# Plus on va vite, plus l'angle permis est petit : à 600 km/h, quelques
 		# degrés suffisent déjà à traverser la piste.
@@ -419,7 +434,9 @@ func _avancer_sur_le_relief(delta: float) -> void:
 		_normale_sol = get_floor_normal()
 		var le_long_du_sol := (avant - _normale_sol * avant.dot(_normale_sol)).normalized()
 		# Ça freine en montée et ça accélère en descente.
-		vitesse = maxf(vitesse - gravite * effet_pente * le_long_du_sol.y * delta, 0.0)
+		# (Sans jamais changer de sens tout seul : on ne recule pas dans une côte.)
+		var nouvelle := vitesse - gravite * effet_pente * le_long_du_sol.y * delta
+		vitesse = maxf(nouvelle, 0.0) if vitesse >= 0.0 else minf(nouvelle, 0.0)
 		velocity = le_long_du_sol * vitesse
 	else:
 		# En l'air : on garde l'élan, la gravité nous ramène vers le sol.

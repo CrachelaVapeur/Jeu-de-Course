@@ -2,6 +2,7 @@ extends Camera3D
 ## Caméra qui suit le bolide et fabrique une bonne partie de la sensation de
 ## vitesse : champ de vision qui s'élargit, recul quand on accélère fort,
 ## tremblements en boost et lors des chocs.
+## Touche C (bouton Y de la manette) : passe en vue cockpit et revient.
 
 @export var cible: Vehicule
 
@@ -12,6 +13,7 @@ extends Camera3D
 @export var fov_distorsion := 160.0  ## champ de vision pendant le boost : l'espace semble se déformer
 @export var recul_max := 3.0  ## la caméra « décroche » quand le boost démarre
 @export var secousse_pleine_vitesse := 0.08  ## tremblement en plein boost (monte progressivement avec la vitesse)
+@export var vue_cockpit := false  ## vrai : on voit la route depuis le siège du pilote
 
 var _cap_camera := 0.0
 var _vitesse_precedente := 0.0
@@ -36,8 +38,13 @@ func _physics_process(delta: float) -> void:
 	_vitesse_precedente = cible.vitesse
 	_recul = lerpf(_recul, clampf(acceleration * 0.04, -1.0, recul_max), 1.0 - exp(-3.0 * delta))
 
-	global_position = cible.global_position + arriere * (distance + _recul) + Vector3.UP * hauteur
-	look_at(cible.global_position - arriere * 12.0 + Vector3.UP * 1.0)
+	if Input.is_action_just_pressed("camera"):
+		vue_cockpit = not vue_cockpit
+	if vue_cockpit:
+		global_transform = cible.repere_cockpit()
+	else:
+		global_position = cible.global_position + arriere * (distance + _recul) + Vector3.UP * hauteur
+		look_at(cible.global_position - arriere * 12.0 + Vector3.UP * 1.0)
 
 	# 3. Le champ de vision s'élargit avec la vitesse : c'est l'effet le plus fort.
 	var ratio := clampf(cible.vitesse / cible.vitesse_boost, 0.0, 1.0)
