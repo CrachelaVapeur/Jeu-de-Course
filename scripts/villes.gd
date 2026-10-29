@@ -16,6 +16,7 @@ const SHADER_IMMEUBLE := preload("res://shaders/immeuble.gdshader")
 const SHADER_FAISCEAU := preload("res://shaders/faisceau.gdshader")
 const SHADER_HALO := preload("res://shaders/halo.gdshader")
 const SCRIPT_TOURNER := preload("res://scripts/tourner.gd")
+const SCRIPT_BALAYER := preload("res://scripts/balayer.gd")
 
 const COULEURS_IMMEUBLES: Array[Color] = [
 	Color(0.22, 0.24, 0.30), Color(0.30, 0.30, 0.34), Color(0.18, 0.20, 0.24),
@@ -116,6 +117,12 @@ func _construire_ville(ville: Dictionary) -> void:
 	_ajouter_immeubles(corps, couleurs, reglages, matiere)
 	_circuit._ajouter_en_masse(BoxMesh.new(), toits, _sans_couleur, _circuit._matiere(Color(0.2, 0.2, 0.24)))
 	_circuit._ajouter_en_masse(BoxMesh.new(), feux, _sans_couleur, _circuit._matiere(Color(1.0, 0.1, 0.06), 2.5))
+
+	# Le halo de la ville : la brume éclairée par en dessous, comme les nuits
+	# de Blade Runner. Les immeubles se découpent dessus en silhouette.
+	var sol_centre: float = maxf(_circuit._hauteur_sol(centre.x, centre.y), _circuit.terrain.niveau_mer)
+	var couleur_halo := Color(1.0, 0.62, 0.38).lerp(Color(0.45, 0.75, 1.0), teinte)
+	_ajouter_halo(Vector3(centre.x, sol_centre + hauteur_max * 0.35, centre.y), rayon * 3.2, couleur_halo, 0.09, 0.00035)
 	print("Ville : %d immeubles" % corps.size())
 
 
@@ -185,10 +192,17 @@ func _construire_pyramide(m: Dictionary) -> void:
 	lumiere.position = Vector3(p.x, sol + hauteur * 0.6, p.y)
 	_circuit.add_child(lumiere)
 
-	# Des projecteurs qui partent du sommet en éventail, comme sur la carte.
+	# Des projecteurs qui partent du sommet en éventail, comme sur la carte,
+	# et balaient doucement le ciel.
 	for k in 4:
 		var direction := Vector3(cos(k * TAU / 4.0 + 0.4), 0.55, sin(k * TAU / 4.0 + 0.4)).normalized()
-		_ajouter_faisceau(sommet, direction, 900.0, 40.0, Color(1.0, 0.85, 0.6), 0.12)
+		var pivot := Node3D.new()
+		pivot.set_script(SCRIPT_BALAYER)
+		pivot.set("decalage", k * 0.27)
+		pivot.set("periode", 14.0 + k * 2.5)
+		pivot.position = sommet
+		_circuit.add_child(pivot)
+		_ajouter_faisceau(Vector3.ZERO, direction, 900.0, 40.0, Color(1.0, 0.85, 0.6), 0.12, pivot)
 
 
 ## Trois grosses cheminées d'usine en chantier, avec des grues et des feux.
@@ -265,13 +279,17 @@ func _construire_phare(m: Dictionary) -> void:
 
 # --- Lumières ------------------------------------------------------------------
 
-func _ajouter_halo(position_halo: Vector3, taille: float, couleur: Color, force: float) -> void:
+## « brume » : plus elle est petite, plus le halo se voit de loin.
+func _ajouter_halo(position_halo: Vector3, taille: float, couleur: Color, force: float, brume := 0.0012) -> void:
 	var carre := QuadMesh.new()
 	carre.size = Vector2(taille, taille)
 	var matiere := ShaderMaterial.new()
 	matiere.shader = SHADER_HALO
 	matiere.set_shader_parameter("couleur", couleur)
 	matiere.set_shader_parameter("force", force)
+	matiere.set_shader_parameter("brume", brume)
+	# Le halo s'efface en douceur là où il rentre dans le sol ou les immeubles.
+	matiere.set_shader_parameter("fondu", taille * 0.15)
 	_circuit._matieres_decor.append(matiere)
 	var instance := MeshInstance3D.new()
 	instance.mesh = carre
@@ -304,7 +322,7 @@ func _faisceau(longueur: float, rayon: float, couleur: Color, force: float) -> M
 	return instance
 
 
-func _ajouter_faisceau(depart: Vector3, direction: Vector3, longueur: float, rayon: float, couleur: Color, force: float) -> void:
+func _ajouter_faisceau(depart: Vector3, direction: Vector3, longueur: float, rayon: float, couleur: Color, force: float, parent: Node3D = null) -> void:
 	var faisceau := _faisceau(longueur, rayon, couleur, force)
 	# Le cylindre est vertical : on l'oriente pour que son axe suive « direction ».
 	var y := -direction
@@ -312,4 +330,6 @@ func _ajouter_faisceau(depart: Vector3, direction: Vector3, longueur: float, ray
 	var x := y.cross(autre).normalized()
 	var z := x.cross(y)
 	faisceau.transform = Transform3D(Basis(x, y, z), depart + direction * longueur * 0.5)
-	_circuit.add_child(faisceau)
+	if parent == null:
+		parent = _circuit
+	parent.add_child(faisceau)
