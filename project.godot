@@ -12,12 +12,13 @@ config_version=5
 
 config/name="Jeu de Course"
 config/description="Prototype « sensation de vitesse » du jeu de course d'Eric et Willy."
-run/main_scene="res://scenes/circuit_01.tscn"
+run/main_scene="res://scenes/menu_principal.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
 [autoload]
 
 Commandes="*res://scripts/commandes.gd"
+Graphismes="*res://scripts/graphismes.gd"
 
 [display]
 

@@ -14,7 +14,10 @@ const COMMANDES := {
 	"deraper": {"touches": [KEY_SPACE, KEY_X], "bouton": JOY_BUTTON_RIGHT_SHOULDER},
 	"recommencer": {"touches": [KEY_R], "bouton": JOY_BUTTON_START},
 	"camera": {"touches": [KEY_C], "bouton": JOY_BUTTON_Y},  # vue poursuite / cockpit / capot
+	"menu": {"touches": [KEY_ESCAPE], "bouton": JOY_BUTTON_BACK},  # retour au menu de démarrage
 }
+
+const SCENE_MENU := "res://scenes/menu_principal.tscn"
 
 
 func _ready() -> void:
@@ -38,3 +41,12 @@ func _ready() -> void:
 			var ev_bouton := InputEventJoypadButton.new()
 			ev_bouton.button_index = def["bouton"]
 			InputMap.action_add_event(nom, ev_bouton)
+
+
+## Échap (ou Back sur manette) ramène au menu depuis n'importe quelle course.
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_action_pressed("menu"):
+		return
+	var scene := get_tree().current_scene
+	if scene != null and scene.scene_file_path != SCENE_MENU:
+		get_tree().change_scene_to_file(SCENE_MENU)

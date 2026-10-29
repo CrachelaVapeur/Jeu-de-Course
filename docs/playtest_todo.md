@@ -4,8 +4,8 @@ Things to try by hand in the game. Each Claude adds a line when its change
 can be felt; the person who plays writes the result. Remove a line once it
 is validated and its result is recorded in the GDD or a session report.
 
-Controls: Z / ↑ accelerate, S / ↓ brake, Q D / ← → steer, Shift boost,
-Space drift, R restart, C change view (gamepad: Y).
+Controls: W / ↑ accelerate, S / ↓ brake, A D / ← → steer, Shift boost,
+Space drift, R restart, C change view, Esc back to the menu (gamepad: Y).
 
 | # | Scene | What to try | What should happen | Result (who, date) |
 |---|-------|-------------|--------------------|--------------------|
@@ -31,3 +31,7 @@ Space drift, R restart, C change view (gamepad: Y).
 
 Note: the boost gauge is hidden and the boost is infinite for now (car
 testing phase, `boost_infini` on the Vehicule node).
+| 20 | start screen (F5) | Launch the game | A menu opens with Circuit 1, Test circuit, Speed test, Graphics settings and Quit; each race button loads its scene; Esc in a race comes back to the menu | |
+| 21 | start screen > Graphics settings | Choose Low, start Circuit 1, compare with High | Low: lower 3D resolution, no shadows, no glow, no speed lines or tunnel vision; frame rate clearly higher on a weak laptop. High looks like before. Settings are remembered after restarting | |
+| 22 | start screen > Graphics settings | Tick "Show FPS counter", start a race | A green FPS number shows at the top left | |
+| 23 | any race | Read the on-screen help and the lap timer | Everything is in English (W A S D or arrows, Shift, Space, C, R, Esc) | |

@@ -1105,15 +1105,15 @@ func _mettre_a_jour_affichage() -> void:
 		return
 	var texte := ""
 	if _termine:
-		texte = "Terminé ! %s" % _format_temps(_temps_total)
+		texte = "Finished! %s" % _format_temps(_temps_total)
 	elif _tour == 0:
-		texte = "Chrono : franchis la ligne"
+		texte = "Timer: cross the line"
 	elif _donnees.BOUCLE:
-		texte = "Tour %d / %d   %s" % [_tour, _donnees.TOURS, _format_temps(_temps_tour)]
+		texte = "Lap %d / %d   %s" % [_tour, _donnees.TOURS, _format_temps(_temps_tour)]
 	else:
 		texte = "%s   %d m" % [_format_temps(_temps_total), maxi(roundi(ligne_arrivee - _distance_precedente), 0)]
 	if _meilleur_tour < INF:
-		texte += "\n%s %s" % ["Meilleur tour" if _donnees.BOUCLE else "Meilleur temps", _format_temps(_meilleur_tour)]
+		texte += "\n%s %s" % ["Best lap" if _donnees.BOUCLE else "Best time", _format_temps(_meilleur_tour)]
 	_affichage.text = texte
 
 
