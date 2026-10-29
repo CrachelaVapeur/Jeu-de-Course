@@ -7,7 +7,9 @@
 // UV2.y = 2 : les pointillés sont lumineux, et des vagues de lumière y courent.
 // La couleur des sommets (COLOR) donne la teinte des lumières de la zone.
 shader_type spatial;
-render_mode diffuse_toon, specular_disabled, cull_disabled;
+// Éclairage doux (pas « toon ») : sinon chaque petit changement de pente fait
+// une bande d'un autre gris, et la route semble découpée en morceaux.
+render_mode diffuse_lambert, specular_disabled, cull_disabled;
 
 uniform vec4 asphalte : source_color = vec4(0.26, 0.23, 0.27, 1.0);
 uniform vec4 marquage : source_color = vec4(0.92, 0.9, 0.82, 1.0);
@@ -57,9 +59,8 @@ void route(vec2 uv, float demi, bool lumineuse, float temps, vec3 teinte, out ve
 	float d = uv.y;
 	float ax = abs(x);
 
-	// Dalles de béton de 20 m.
-	vec3 c = asphalte.rgb + (hasard(floor(d / 20.0)) - 0.5) * 0.05;
-	c *= 1.0 - 0.5 * step(fract(d / 20.0), 0.015);
+	// Un revêtement d'un seul tenant (un ruban), avec juste un léger grain.
+	vec3 c = asphalte.rgb * (0.96 + 0.08 * bruit(vec2(x * 0.7, d * 0.12)));
 
 	// Une seule ligne de pointillés, au centre : un trait de 6 m tous les 12 m.
 	float pointille = (1.0 - smoothstep(0.18, 0.28, ax)) * step(fract(d / 12.0), 0.5);

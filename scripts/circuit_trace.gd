@@ -18,7 +18,12 @@ extends DecorBase
 @export var hauteur_muret := 1.0
 ## Largeur des bords relevés (obstacle « bord_releve ») : la route remonte en
 ## arrondi sur cette distance de chaque côté, comme une piste de bobsleigh.
-@export var largeur_bord_releve := 12.0
+@export var largeur_bord_releve := 13.0
+## Lissage du tracé, en mètres : les virages deviennent des courbes régulières
+## (un ruban) au lieu d'une suite de petits coudes. 0 = pas de lissage.
+@export var lissage_trace := 18.0
+## Idem pour la largeur et le dévers, qui changent plus doucement d'un point à l'autre.
+@export var lissage_reglages := 30.0
 
 const SHADER_ROUTE := preload("res://shaders/route_circuit.gdshader")
 const SHADER_EAU := preload("res://shaders/eau.gdshader")
@@ -37,6 +42,8 @@ var ligne_arrivee := 0.0  ## distance de la ligne d'arrivée
 
 var _donnees: GDScript
 var _distances_points: Array[float] = []
+var _reglages_lisses := PackedVector2Array()  # largeur et dévers tous les PAS_REGLAGES mètres
+const PAS_REGLAGES := 2.0
 var _tranches: Array[Dictionary] = []
 var _hasard := RandomNumberGenerator.new()
 
@@ -164,11 +171,15 @@ func _construire_courbe() -> void:
 		courbe.add_point(points[i], -tangente, tangente)
 
 	courbe.bake_interval = 1.0
+	if lissage_trace > 0.0:
+		_lisser_trace(lissage_trace)
 	longueur = courbe.get_baked_length()
 	for p in points:
 		_distances_points.append(courbe.get_closest_offset(p))
 	if _donnees.BOUCLE:
 		_distances_points[-1] = longueur
+	if lissage_reglages > 0.0:
+		_reglages_lisses = _lisser_valeurs(longueur, lissage_reglages)
 
 	var texte := "%s : %d m." % [_donnees.NOM, roundi(longueur)]
 	# Pour un petit circuit, on affiche aussi la distance de chaque point.
@@ -192,6 +203,78 @@ static func altitude_profil(s: float, profil: Array) -> float:
 		if s <= b[0]:
 			return lerpf(a[1], b[1], smoothstep(a[0], b[0], s))
 	return profil[-1][1]
+
+
+## Lisse le tracé : chaque point devient la moyenne de ses voisins, pondérée
+## en cloche sur « sigma » mètres. Les virages deviennent des courbes
+## régulières au lieu d'une suite de petits coudes (un point tous les 45 m
+## environ), et le tracé ne bouge que d'un ou deux mètres.
+func _lisser_trace(sigma: float) -> void:
+	var h := 2.0
+	var total := courbe.get_baked_length()
+	var bruts := PackedVector3Array()
+	for i in ceili(total / h) + 1:
+		bruts.append(courbe.sample_baked(minf(i * h, total), true))
+	var poids := _cloche(sigma, h)
+	var rayon := (poids.size() - 1) / 2
+	var dernier := bruts.size() - 1
+	var lisses: Array[Vector3] = []
+	var i := 0
+	while i <= dernier:
+		var somme := Vector3.ZERO
+		var somme_poids := 0.0
+		for k in range(-rayon, rayon + 1):
+			var j := i + k
+			var p: Vector3
+			if _donnees.BOUCLE:
+				p = bruts[posmod(j, dernier)]
+			elif j < 0:
+				# Au-delà des bouts, on prolonge la route en miroir : les bouts
+				# restent à leur place.
+				p = 2.0 * bruts[0] - bruts[mini(-j, dernier)]
+			elif j > dernier:
+				p = 2.0 * bruts[dernier] - bruts[maxi(2 * dernier - j, 0)]
+			else:
+				p = bruts[j]
+			somme += p * poids[k + rayon]
+			somme_poids += poids[k + rayon]
+		lisses.append(somme / somme_poids)
+		i = dernier if i < dernier and i + 2 > dernier else i + 2  # un point tous les 4 m
+	courbe.clear_points()
+	for k in lisses.size():
+		var tangente := (lisses[mini(k + 1, lisses.size() - 1)] - lisses[maxi(k - 1, 0)]) / 6.0
+		courbe.add_point(lisses[k], -tangente, tangente)
+
+
+## Les poids d'une moyenne « en cloche » (gaussienne) de largeur sigma mètres,
+## pour des valeurs espacées de h mètres.
+static func _cloche(sigma: float, h: float) -> PackedFloat32Array:
+	var rayon := ceili(sigma * 3.0 / h)
+	var poids := PackedFloat32Array()
+	for k in range(-rayon, rayon + 1):
+		poids.append(exp(-0.5 * pow(k * h / sigma, 2.0)))
+	return poids
+
+
+## Largeur et dévers relevés tous les PAS_REGLAGES mètres, puis lissés : ils
+## changent en douceur au lieu de faire des vagues d'un point à l'autre.
+func _lisser_valeurs(total: float, sigma: float) -> PackedVector2Array:
+	var bruts := PackedVector2Array()
+	for i in ceili(total / PAS_REGLAGES) + 1:
+		bruts.append(_reglages_bruts(i * PAS_REGLAGES))
+	var poids := _cloche(sigma, PAS_REGLAGES)
+	var rayon := (poids.size() - 1) / 2
+	var lisses := PackedVector2Array()
+	for i in bruts.size():
+		var somme := Vector2.ZERO
+		var somme_poids := 0.0
+		for k in range(-rayon, rayon + 1):
+			var j := i + k
+			j = posmod(j, bruts.size() - 1) if _donnees.BOUCLE else clampi(j, 0, bruts.size() - 1)
+			somme += bruts[j] * poids[k + rayon]
+			somme_poids += poids[k + rayon]
+		lisses.append(somme / somme_poids)
+	return lisses
 
 
 func _voisin(points: Array[Vector3], i: int) -> Vector3:
@@ -238,8 +321,17 @@ func _echantillon(d: float) -> Vector3:
 	return courbe.sample_baked(clampf(d, 0.0, longueur), true)
 
 
-## Largeur et dévers interpolés entre les points de passage.
+## Largeur et dévers à une distance (lissés, voir _lisser_valeurs).
 func _reglages_a(d: float) -> Vector2:
+	if _reglages_lisses.is_empty():
+		return _reglages_bruts(d)
+	var u := clampf(d / PAS_REGLAGES, 0.0, _reglages_lisses.size() - 1.0)
+	var i := mini(floori(u), _reglages_lisses.size() - 2)
+	return _reglages_lisses[i].lerp(_reglages_lisses[i + 1], u - i)
+
+
+## Largeur et dévers interpolés entre les points de passage.
+func _reglages_bruts(d: float) -> Vector2:
 	var points: Array = _donnees.POINTS
 	var n := points.size()
 	for i in _distances_points.size() - 1:
