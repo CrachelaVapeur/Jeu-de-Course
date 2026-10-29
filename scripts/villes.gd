@@ -122,7 +122,7 @@ func _construire_ville(ville: Dictionary) -> void:
 	# de Blade Runner. Les immeubles se découpent dessus en silhouette.
 	var sol_centre: float = maxf(_circuit._hauteur_sol(centre.x, centre.y), _circuit.terrain.niveau_mer)
 	var couleur_halo := Color(1.0, 0.62, 0.38).lerp(Color(0.45, 0.75, 1.0), teinte)
-	_ajouter_halo(Vector3(centre.x, sol_centre + hauteur_max * 0.35, centre.y), rayon * 3.2, couleur_halo, 0.12, 0.00035)
+	_ajouter_halo(Vector3(centre.x, sol_centre + hauteur_max * 0.35, centre.y), rayon * 3.2, couleur_halo, 0.09, 0.00035)
 	print("Ville : %d immeubles" % corps.size())
 
 
