@@ -42,6 +42,7 @@ const MANETTE_DROITE := [
 	[["accelerer"], "RT", "Accelerate"],
 	[["deraper"], "RB", "Drift"],
 	[["boost"], "A", "Boost"],
+	[["dash"], "X", "Dash"],
 	[["camera"], "Y", "Camera"],
 	[["pause"], "START", "Pause"],
 ]
@@ -50,6 +51,7 @@ const CLAVIER_GAUCHE := [
 	[["freiner"], "S", "Brake / reverse"],
 	[["gauche", "droite"], "A  D", "Steer"],
 	[["boost"], "Shift", "Boost"],
+	[["dash"], "E", "Dash"],
 	[VUES, "1-4", "Views"],
 ]
 const CLAVIER_DROITE := [

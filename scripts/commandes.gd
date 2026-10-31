@@ -11,6 +11,7 @@ const COMMANDES := {
 	"gauche": {"touches": [KEY_A, KEY_LEFT], "axe": [JOY_AXIS_LEFT_X, -1.0]},
 	"droite": {"touches": [KEY_D, KEY_RIGHT], "axe": [JOY_AXIS_LEFT_X, 1.0]},
 	"boost": {"touches": [KEY_SHIFT], "bouton": JOY_BUTTON_A},
+	"dash": {"touches": [KEY_E], "bouton": JOY_BUTTON_X},  # accélération courte, 3 charges
 	"deraper": {"touches": [KEY_SPACE, KEY_X], "bouton": JOY_BUTTON_RIGHT_SHOULDER},
 	"recommencer": {"touches": [KEY_R]},  # sur manette : dans le menu de pause (Start)
 	"camera": {"touches": [KEY_C], "bouton": JOY_BUTTON_Y},  # vue suivante (poursuite, lointaine, cockpit, capot)
