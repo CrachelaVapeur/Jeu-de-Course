@@ -44,6 +44,7 @@ func _draw() -> void:
 	_dessiner_barre()
 	if not vehicule.boost_infini:
 		_dessiner_boost()
+	_dessiner_boite()
 
 
 func _dessiner_barre() -> void:
@@ -90,6 +91,36 @@ func _dessiner_barre() -> void:
 		var bonus := "+%d km/h" % roundi(vehicule.style_bonus_vitesse * part * 3.6)
 		var l := police.get_string_size(bonus, HORIZONTAL_ALIGNMENT_LEFT, -1, taille).x
 		_texte(police, Vector2(x0 + LARGEUR - 8.0 - l, y_texte), bonus, taille)
+
+
+## Le rapport engagé (chiffre dans un cadre) et le compte-tours (barre, zone rouge à la fin).
+func _dessiner_boite() -> void:
+	var cadre := Rect2(size.x - 50.0 - 46.0, size.y - 215.0, 46.0, 46.0)
+	var rouge := vehicule.regime > 0.88
+	draw_rect(cadre, FOND)
+	draw_rect(cadre, Color(1.0, 0.35, 0.3) if rouge else Color(0.85, 0.9, 1.0, 0.6), false, 2.5)
+	var police := ThemeDB.fallback_font
+	var texte := vehicule.rapport_texte()
+	var taille := 32
+	var l := police.get_string_size(texte, HORIZONTAL_ALIGNMENT_LEFT, -1, taille).x
+	var pos := Vector2(cadre.position.x + (cadre.size.x - l) * 0.5, cadre.position.y + cadre.size.y * 0.5 + taille * 0.35)
+	draw_string_outline(police, pos, texte, HORIZONTAL_ALIGNMENT_LEFT, -1, taille, 6, Color(0.05, 0.02, 0.1))
+	draw_string(police, pos, texte, HORIZONTAL_ALIGNMENT_LEFT, -1, taille, Color(1, 1, 1))
+
+	# Compte-tours : une barre qui se remplit ; les derniers 18 % sont en rouge.
+	var largeur := 190.0
+	var haut := 14.0
+	var x0 := cadre.position.x - 12.0 - largeur
+	var y0 := cadre.position.y + (cadre.size.y - haut) * 0.5
+	draw_rect(Rect2(x0, y0, largeur, haut), FOND)
+	var part := clampf(vehicule.regime, 0.0, 1.0)
+	var limite_rouge := 0.82
+	var jaune := Color(1.0, 0.85, 0.35)
+	var rouge_c := Color(1.0, 0.3, 0.25)
+	draw_rect(Rect2(x0, y0, largeur * minf(part, limite_rouge), haut), jaune)
+	if part > limite_rouge:
+		draw_rect(Rect2(x0 + largeur * limite_rouge, y0, largeur * (part - limite_rouge), haut), rouge_c)
+	draw_rect(Rect2(x0, y0, largeur, haut), Color(0.85, 0.9, 1.0, 0.55), false, 1.5)
 
 
 func _texte(police: Font, pos: Vector2, texte: String, taille: int) -> void:

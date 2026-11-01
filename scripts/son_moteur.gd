@@ -8,6 +8,9 @@ extends AudioStreamPlayer
 @export var vehicule: Vehicule
 @export var frequence_ralenti := 50.0
 @export var frequence_max := 210.0
+## Coché : la hauteur du son suit le régime de la boîte de vitesses (il monte dans chaque rapport
+## puis retombe au passage). Décoché : il suit la vitesse, comme avant.
+@export var suivre_la_boite := true
 
 @export_group("Concentration en boost")
 @export var compensation_volume_db := 6.0  ## remonte le volume pour que l'effet étouffé ne le baisse pas
@@ -39,6 +42,8 @@ func _process(delta: float) -> void:
 
 	var ratio := absf(vehicule.ratio_vitesse())
 	var frequence_voulue := frequence_ralenti + (frequence_max - frequence_ralenti) * minf(ratio, 2.3) / 2.3
+	if suivre_la_boite:
+		frequence_voulue = frequence_ralenti + (frequence_max - frequence_ralenti) * clampf(vehicule.regime, 0.0, 1.0)
 	_frequence = lerpf(_frequence, frequence_voulue, 1.0 - exp(-8.0 * delta))
 	var souffle := 0.4 if vehicule.en_boost else 0.04 + ratio * 0.06
 	var clarte := 0.15 + vehicule.gaz * 0.25

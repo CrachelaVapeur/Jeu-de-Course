@@ -21,6 +21,9 @@ signal teleporte(decalage: Vector3)
 ## Émis quand le bolide retombe au sol après un saut. « force » = vitesse de chute.
 signal atterrissage(force: float)
 
+## Émis quand la boîte change de rapport (1 à 6, ou -1 pour la marche arrière).
+signal rapport_change(rapport: int)
+
 @export_group("Vitesse (en mètres par seconde, ×3.6 pour des km/h)")
 @export var vitesse_max := 85.0  ## environ 306 km/h sans boost
 @export var vitesse_boost := 146.0  ## environ 525 km/h : la vitesse la plus haute du jeu
@@ -37,6 +40,17 @@ signal atterrissage(force: float)
 @export var redressement := 0.4  ## le bolide se remet doucement droit si on lâche
 @export var angle_max := 0.6  ## on ne peut pas faire demi-tour (piste droite)
 @export var demi_largeur_piste := 13.0
+
+@export_group("Boîte de vitesses (automatique)")
+## Boîte automatique à 6 rapports + marche arrière. Pour l'instant elle ne change PAS la conduite :
+## elle donne le rapport et le régime moteur (pour l'affichage et le son). Le rapport se déduit de
+## la vitesse. Plus tard : rétrograder pour entrer en dérapage, frein moteur, etc.
+## Vitesse (part de la vitesse max de base) à laquelle chaque rapport commence : 1er, 2e... 6e.
+@export var seuils_rapports: Array[float] = [0.0, 0.15, 0.32, 0.50, 0.68, 0.84]
+@export var hysteresis_rapport := 0.04  ## on rétrograde un peu plus bas qu'on a monté (évite de battre)
+@export var regime_ralenti := 0.2  ## régime au repos (0 à 1)
+@export var regime_bas := 0.5  ## régime juste après un changement de rapport
+@export var reactivite_regime := 14.0  ## plus c'est grand, plus le régime suit vite (la chute après un passage se voit)
 
 @export_group("Boost")
 ## Le BOOST : un nombre limité de charges (aucune ne revient pour l'instant). Une pression
@@ -170,6 +184,8 @@ var en_derapage := false
 var boost_charges := 3  ## charges de boost qui restent
 var boost_restant := 0.0  ## secondes de boost qui restent (pendant un boost)
 var style := 0.0  ## la jauge Devilmaydrive, de 0 à style_max
+var rapport := 1  ## rapport engagé : 1 à 6, ou -1 en marche arrière
+var regime := 0.2  ## régime moteur de 0 à 1 (1 = zone rouge), lissé
 var en_boost := false
 var gaz := 0.0
 ## 0 = conduite normale, 1 = plein effet de boost. La caméra (champ de vision)
@@ -398,6 +414,7 @@ func _physics_process(delta: float) -> void:
 
 	_conduire(delta)
 	_mettre_a_jour_distorsion(delta)
+	_mettre_a_jour_boite(delta)
 	if piste_droite:
 		_avancer_tout_droit(delta)
 		_garder_sur_la_piste()
@@ -422,6 +439,37 @@ func cap_camera() -> float:
 func _perdre_un_palier() -> void:
 	var palier := style_max / float(style_segments)
 	style = maxf((ceilf(style / palier - 0.0001) - 1.0) * palier, 0.0)
+
+
+## La boîte automatique : le rapport vient de la vitesse, le régime monte dans chaque rapport
+## puis retombe au passage suivant. N'influence pas la conduite (voir le groupe Boîte de vitesses).
+func _mettre_a_jour_boite(delta: float) -> void:
+	var ancien := rapport
+	var cible := regime_ralenti
+	if vitesse < -0.5:
+		rapport = -1
+		cible = lerpf(regime_ralenti, 0.85, clampf(-vitesse / vitesse_marche_arriere, 0.0, 1.0))
+	else:
+		if rapport < 1:
+			rapport = 1
+		var relatif := vitesse / vitesse_max
+		var dernier := seuils_rapports.size()
+		while rapport < dernier and relatif >= seuils_rapports[rapport]:
+			rapport += 1
+		while rapport > 1 and relatif < seuils_rapports[rapport - 1] - hysteresis_rapport:
+			rapport -= 1
+		var debut: float = seuils_rapports[rapport - 1]
+		var fin: float = seuils_rapports[rapport] if rapport < dernier else vitesse_boost / vitesse_max
+		var avancement := clampf((relatif - debut) / maxf(fin - debut, 0.01), 0.0, 1.0)
+		var bas := regime_ralenti if rapport == 1 else regime_bas
+		cible = lerpf(bas, 1.0, avancement)
+	regime = lerpf(regime, cible, 1.0 - exp(-reactivite_regime * delta))
+	if rapport != ancien:
+		rapport_change.emit(rapport)
+
+
+func rapport_texte() -> String:
+	return "R" if rapport < 0 else str(rapport)
 
 
 ## La vitesse max du moment : celle de base, plus le bonus gagné avec la jauge Devilmaydrive.
