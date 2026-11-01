@@ -14,7 +14,7 @@ func _ready() -> void:
 	# Le guide en icônes (coin en haut à gauche) remplace l'ancienne aide en texte.
 	add_child(preload("res://scripts/guide_commandes.gd").new())
 	($Aide as Label).visible = false
-	# Les jauges de boost (barre) et de dash (3 ronds), à la place de l'ancienne barre.
+	# La jauge Devilmaydrive (barre) et les charges de boost (ronds), à la place de l'ancienne barre.
 	var jauges: Control = preload("res://scripts/jauges_boost.gd").new()
 	jauges.vehicule = vehicule
 	add_child(jauges)
@@ -35,8 +35,6 @@ func _process(delta: float) -> void:
 	# Les lignes apparaissent au-delà de 60 % de la vitesse max, à fond en boost.
 	var debut := vehicule.vitesse_max * 0.6
 	var intensite := clampf((vehicule.vitesse - debut) / (vehicule.vitesse_boost - debut), 0.0, 1.0)
-	# Le dash ajoute des lignes bien plus présentes, le temps de l'accélération.
-	intensite = maxf(intensite, vehicule.dash_effet)
 	var matiere := _lignes.material as ShaderMaterial
 	var actuelle: float = matiere.get_shader_parameter("intensite")
 	matiere.set_shader_parameter("intensite", lerpf(actuelle, intensite, 1.0 - exp(-6.0 * delta)))

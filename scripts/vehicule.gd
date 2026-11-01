@@ -39,13 +39,14 @@ signal atterrissage(force: float)
 @export var demi_largeur_piste := 13.0
 
 @export_group("Boost")
-@export var jauge_max := 100.0
-## Le BOOST : la jauge se remplit en dérapant (voir recharge_boost_derapage). Pleine, on la
-## déclenche d'une pression sur la touche : le boost dure alors « duree_boost » secondes,
-## sans qu'on puisse le couper ni ralentir (ni frein, ni dérapage ne font perdre de vitesse).
-## Coché : ancien mode d'essai, boost illimité tant qu'on tient la touche, sans jauge.
+## Le BOOST : un nombre limité de charges (aucune ne revient pour l'instant). Une pression
+## sur la touche en consomme une : le boost dure alors « duree_boost » secondes, sans qu'on
+## puisse le couper ni ralentir (ni frein, ni dérapage ne font perdre de vitesse).
+## Il ne dépend pas du dérapage (voir le groupe Devilmaydrive pour ça).
+## Coché : ancien mode d'essai, boost illimité tant qu'on tient la touche.
+@export var boost_charges_max := 3
 @export var boost_infini := false
-@export var duree_boost := 4.0  ## secondes de boost avec une jauge pleine
+@export var duree_boost := 4.0  ## secondes de boost par charge
 @export var attaque_distorsion := 8.0  ## vitesse à laquelle l'effet de boost s'installe
 @export var relachement_distorsion := 5.0  ## vitesse à laquelle il s'efface après le boost
 ## Secondes pour que le boost donne toute sa poussée : il démarre doucement,
@@ -55,14 +56,16 @@ signal atterrissage(force: float)
 ## Après le boost, vitesse perdue par seconde pour revenir à la vitesse max (plus c'est grand, plus le boost s'arrête net).
 @export var freinage_apres_boost := 48.0
 
-@export_group("Dash")
-## Le DASH : une brève accélération, 3 charges qui reviennent avec le temps. Sans effet sur la
-## jauge de boost. Pour l'instant, seul l'effet visuel est celui des lignes de vitesse.
-@export var dash_charges_max := 3
-@export var recharge_dash := 6.0  ## secondes pour regagner une charge
-@export var duree_dash := 0.9
-@export var vitesse_dash := 108.0  ## m/s visés pendant le dash (environ 390 km/h)
-@export var acceleration_dash := 90.0
+@export_group("Devilmaydrive")
+## La jauge de style. Dériver (à bonne vitesse) la remplit ; plus elle est haute, plus la vitesse
+## max de la voiture monte : c'est la récompense. Elle se vide quand on arrête de dériver.
+## Plus tard, d'autres figures (sauts, dépassements, frôlements) viendront aussi la remplir.
+@export var style_max := 100.0
+@export var style_gain_derapage := 12.0  ## par seconde de dérapage à vitesse pleine (plus de 8 s pour la remplir)
+@export var style_bonus_vitesse := 25.0  ## m/s de vitesse max en plus à jauge pleine (environ 90 km/h)
+@export var style_delai_chute := 1.5  ## secondes sans dérapage avant que la jauge commence à baisser
+@export var style_chute := 8.0  ## par seconde, une fois le délai passé
+@export var style_perte_choc := 35.0  ## retiré à chaque vrai choc contre un mur (0 = aucune pénalité)
 
 @export_group("Apparence")
 ## Où se trouvent les yeux du pilote, dans le repère de la carrosserie (vue cockpit).
@@ -137,8 +140,7 @@ signal atterrissage(force: float)
 @export var maintien_courbure_grip := 7.0  ## idem à plein grip : on redresse tout de suite
 @export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
-@export var recharge_boost_derapage := 20.0  ## jauge gagnée par seconde de dérapage à pleine vitesse (5 s pour remplir)
-## Pas de jauge pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
+## Pas de style pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
 ## (m/s) : rien en dessous du minimum, plein gain à partir de « vitesse_charge_pleine ».
 @export var vitesse_charge_min := 38.9  ## 140 km/h
 @export var vitesse_charge_pleine := 61.1  ## 220 km/h
@@ -158,7 +160,9 @@ signal atterrissage(force: float)
 
 var vitesse := 0.0
 var en_derapage := false
-var jauge_boost := 100.0
+var boost_charges := 3  ## charges de boost qui restent
+var boost_restant := 0.0  ## secondes de boost qui restent (pendant un boost)
+var style := 0.0  ## la jauge Devilmaydrive, de 0 à style_max
 var en_boost := false
 var gaz := 0.0
 ## 0 = conduite normale, 1 = plein effet de boost. La caméra (champ de vision)
@@ -166,11 +170,6 @@ var gaz := 0.0
 var distorsion := 0.0
 ## 0 au début du boost, 1 quand il pousse à fond (voir duree_montee_boost).
 var montee_boost := 0.0
-## Charges de dash disponibles (décimal : la partie après la virgule est la recharge en cours).
-var dash_charges := 3.0
-## 0..1 : l'intensité de l'effet de dash (lignes de vitesse), lissée.
-var dash_effet := 0.0
-var _dash_restant := 0.0  # secondes de dash qui restent
 
 ## Rayon des roues (en mètres) : sert à faire tourner les roues à la bonne vitesse.
 const RAYON_AVANT := 0.34
@@ -188,7 +187,7 @@ var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
 var _grip := 1.0  # adhérence de l'arrière : 1 = normale, 0 = glisse totale
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
 var _boost_en_attente := false  # un appui boost reçu, pas encore pris en compte par la physique
-var _dash_en_attente := false
+var _style_attente := 0.0  # délai avant que la jauge Devilmaydrive commence à baisser
 var _ignorer_boost := false  # vrai après une perte de focus, jusqu'au relâchement de la touche
 var _omega := 0.0  # vitesse de rotation de la trajectoire en dérapage (rad/s) : la courbure
 var _appui_en_attente := false  # un appui frein/Espace reçu, pas encore pris en compte par la physique
@@ -231,8 +230,8 @@ var _decalage_etirement := 0.0  # recul de la carrosserie pendant l'étirement d
 
 
 func _ready() -> void:
-	jauge_boost = 0.0
-	dash_charges = dash_charges_max
+	style = 0.0
+	boost_charges = boost_charges_max
 	var reglages := get_node_or_null("/root/Graphismes")
 	if reglages != null:
 		mode_glisse = reglages.conduite_glisse
@@ -379,8 +378,6 @@ func _input(event: InputEvent) -> void:
 		_appui_en_attente = true
 	if event.is_action_pressed("boost"):
 		_boost_en_attente = true
-	if event.is_action_pressed("dash"):
-		_dash_en_attente = true
 
 
 func _notification(what: int) -> void:
@@ -412,6 +409,11 @@ func cap_camera() -> float:
 	# Pendant un dérapage, la caméra regarde surtout la trajectoire : on voit le
 	# bolide de travers (comme dans OutRun) au lieu de rester collé derrière son nez.
 	return _cap - _glisse * 0.75
+
+
+## La vitesse max du moment : celle de base, plus le bonus gagné avec la jauge Devilmaydrive.
+func vitesse_max_actuelle() -> float:
+	return vitesse_max + style_bonus_vitesse * clampf(style / style_max, 0.0, 1.0)
 
 
 func ratio_vitesse() -> float:
@@ -448,26 +450,22 @@ func _conduire(delta: float) -> void:
 		_ignorer_boost = false
 	var appui_boost := _boost_en_attente or Input.is_action_just_pressed("boost")
 	_boost_en_attente = false
-	var appui_dash := _dash_en_attente or Input.is_action_just_pressed("dash")
-	_dash_en_attente = false
 	if boost_infini:
 		en_boost = Input.is_action_pressed("boost") and not _ignorer_boost
 	elif en_boost:
 		# Boost lancé : il va jusqu'au bout, la touche n'y change rien.
-		jauge_boost = maxf(jauge_boost - jauge_max / duree_boost * delta, 0.0)
-		if jauge_boost <= 0.0:
+		boost_restant = maxf(boost_restant - delta, 0.0)
+		if boost_restant <= 0.0:
 			en_boost = false
-	elif appui_boost and jauge_boost >= jauge_max - 0.01 and vitesse > 0.0:
+	elif appui_boost and boost_charges > 0 and vitesse > 0.0:
+		boost_charges -= 1
+		boost_restant = duree_boost
 		en_boost = true
 
-	# Dash : 3 charges, une revient toutes les « recharge_dash » secondes.
-	dash_charges = minf(dash_charges + delta / recharge_dash, float(dash_charges_max))
-	if appui_dash and dash_charges >= 1.0 and _dash_restant <= 0.0 and not en_boost and vitesse > 10.0:
-		dash_charges -= 1.0
-		_dash_restant = duree_dash
-	_dash_restant = maxf(_dash_restant - delta, 0.0)
-	var haut := _dash_restant > 0.0
-	dash_effet = move_toward(dash_effet, 1.0 if haut else 0.0, delta * (10.0 if haut else 2.5))
+	# Devilmaydrive : la jauge ne baisse qu'après un moment sans dérapage.
+	_style_attente = maxf(_style_attente - delta, 0.0)
+	if _style_attente <= 0.0:
+		style = maxf(style - style_chute * delta, 0.0)
 
 	if en_boost:
 		montee_boost = minf(montee_boost + delta / duree_montee_boost, 1.0) if duree_montee_boost > 0.0 else 1.0
@@ -477,15 +475,13 @@ func _conduire(delta: float) -> void:
 		vitesse = move_toward(vitesse, vitesse_boost, acceleration_boost * poussee * delta)
 	else:
 		montee_boost = maxf(montee_boost - delta * 2.0, 0.0)
-		if _dash_restant > 0.0:
-			vitesse = move_toward(vitesse, vitesse_dash, acceleration_dash * delta)
-		elif vitesse > vitesse_max:
+		if vitesse > vitesse_max_actuelle():
 			# Après un boost, on redescend doucement : la vitesse « reste » un peu.
-			vitesse = move_toward(vitesse, vitesse_max, freinage_apres_boost * delta)
+			vitesse = move_toward(vitesse, vitesse_max_actuelle(), freinage_apres_boost * delta)
 		elif gaz > 0.0:
 			# En marche arrière, accélérer commence par freiner.
 			var poussee_avant := acceleration if vitesse >= 0.0 else freinage
-			vitesse = move_toward(vitesse, vitesse_max * gaz, poussee_avant * delta)
+			vitesse = move_toward(vitesse, vitesse_max_actuelle() * gaz, poussee_avant * delta)
 		elif frein <= 0.0:
 			vitesse = move_toward(vitesse, 0.0, frottement * delta)
 
@@ -586,13 +582,16 @@ func _conduire_avec_grip(brut: float, manoeuvre: float, delta: float) -> void:
 		_glisse -= pas
 	_cap = _cap_trajectoire + _glisse
 
-	if en_derapage and not en_boost:
-		# En plein boost on ne perd pas de vitesse, et le dérapage ne recharge pas la jauge.
-		var perte := perte_vitesse_glisse if mode_glisse else perte_vitesse_derapage
-		vitesse = maxf(vitesse - vitesse * perte * absf(_glisse) / angle_glisse_max * delta, 0.0)
-		# Le gain suit la vitesse : un dérapage lent ne remplit (presque) rien.
+	if en_derapage:
+		if not en_boost:
+			# En plein boost on ne perd pas de vitesse en dérapant.
+			var perte := perte_vitesse_glisse if mode_glisse else perte_vitesse_derapage
+			vitesse = maxf(vitesse - vitesse * perte * absf(_glisse) / angle_glisse_max * delta, 0.0)
+		# Le gain de style suit la vitesse : un dérapage lent ne remplit (presque) rien.
 		var gain := smoothstep(vitesse_charge_min, vitesse_charge_pleine, vitesse)
-		jauge_boost = minf(jauge_boost + recharge_boost_derapage * gain * delta, jauge_max)
+		if gain > 0.0:
+			style = minf(style + style_gain_derapage * gain * delta, style_max)
+			_style_attente = style_delai_chute
 
 
 func _avancer_tout_droit(delta: float) -> void:
@@ -688,6 +687,8 @@ func _gerer_chocs(avant: Vector3) -> void:
 		plus_de_face = maxf(plus_de_face, de_face)
 		if de_face > 0.1 and not _contact_mur:
 			mur_touche.emit(vitesse * de_face)
+			if vitesse * de_face >= 8.0:
+				style = maxf(style - style_perte_choc, 0.0)  # un vrai choc coûte du style
 			_gerbe_choc(_point_mur, normale, avant, vitesse * de_face)
 			vitesse *= 1.0 - perte_choc * de_face
 			# L'obstacle nous dévie : on repart le long de sa paroi.
@@ -788,6 +789,8 @@ func _garder_sur_la_piste() -> void:
 	if not _contact_mur:
 		# La force du choc dépend de l'angle : de face ça fait mal, en frottant moins.
 		mur_touche.emit(vitesse * absf(sin(_cap)))
+		if vitesse * absf(sin(_cap)) >= 8.0:
+			style = maxf(style - style_perte_choc, 0.0)
 		var cote := signf(position.x)
 		_gerbe_choc(global_position + Vector3(cote * 0.6, 0.4, 0.0), Vector3(-cote, 0.0, 0.0),
 			Vector3(-sin(_cap), 0.0, -cos(_cap)), vitesse * absf(sin(_cap)) + 10.0)
@@ -892,10 +895,11 @@ func _recommencer() -> void:
 	_volant = 0.0
 	velocity = Vector3.ZERO
 	vitesse = 0.0
-	jauge_boost = 0.0
+	style = 0.0
+	_style_attente = 0.0
 	en_boost = false
-	dash_charges = dash_charges_max
-	_dash_restant = 0.0
+	boost_restant = 0.0
+	boost_charges = boost_charges_max
 	distorsion = 0.0
 	montee_boost = 0.0
 	_historique.clear()
