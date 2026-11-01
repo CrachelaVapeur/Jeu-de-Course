@@ -19,12 +19,10 @@ extends Camera3D
 @export var suivi_pente := 0.85
 @export var retard_pente := 4.0  ## plus c'est petit, plus la caméra met de temps à suivre la pente
 @export var garde_sol := 0.9  ## hauteur minimale de la caméra au-dessus de la route ou du terrain
-## Caméra de dérapage (vues de poursuite) : plus près, au ras du sol, pour un plan dramatique
-## qui montre toute la voiture de travers.
+## Caméra de dérapage (vues de poursuite) : plus près du bolide, même hauteur et même angle
+## que d'habitude.
 @export var distance_derapage := 5.2
-@export var hauteur_derapage := 0.5
-@export var garde_sol_derapage := 0.25  ## la caméra peut descendre presque à la hauteur de la route
-@export var decalage_derapage := 1.4  ## m : la caméra se met un peu de côté (3/4 arrière) pour voir le flanc
+@export var decalage_derapage := 0.0  ## m : 0 = derrière le bolide ; > 0 = un peu de côté (3/4 arrière), à l'extérieur du virage
 @export var rapidite_derapage := 4.0  ## vitesse de la transition vers la caméra de dérapage
 @export var fov_min := 68.0
 @export var fov_max := 112.0  ## atteint à pleine vitesse
@@ -126,7 +124,7 @@ func _placer_en_poursuite(arriere: Vector3, delta: float) -> void:
 	var drift_voulu := 1.0 if (cible.en_derapage and cible.is_on_floor()) else 0.0
 	_derapage = lerpf(_derapage, drift_voulu, 1.0 - exp(-rapidite_derapage * delta))
 	var recul := lerpf((distance_loin if loin else distance) + _recul, distance_derapage + _recul * 0.3, _derapage)
-	var haut_camera := lerpf(hauteur_loin if loin else hauteur, hauteur_derapage, _derapage)
+	var haut_camera := hauteur_loin if loin else hauteur
 	# Côté du plan : à l'extérieur du virage, là où on voit le flanc de la voiture.
 	_cote = lerpf(_cote, -signf(cible.glisse_signee()) if absf(cible.glisse_signee()) > 0.02 else _cote, 1.0 - exp(-3.0 * delta))
 
@@ -157,8 +155,7 @@ func _placer_en_poursuite(arriere: Vector3, delta: float) -> void:
 	var voulue := cible.global_position - avant_pente * recul + _haut * haut_camera + cote_vec * (_cote * decalage_derapage * _derapage)
 	voulue = _eviter_le_decor(voulue, delta)
 	global_position = voulue
-	var portee := lerpf(12.0, 4.0, _derapage)
-	look_at(cible.global_position + avant_pente * portee + _haut * lerpf(1.0, 0.6, _derapage), _haut)
+	look_at(cible.global_position + avant_pente * 12.0 + _haut * 1.0, _haut)
 
 
 ## Garde la caméra hors du décor : au-dessus de la route et du terrain, et
@@ -173,7 +170,7 @@ func _eviter_le_decor(voulue: Vector3, delta: float) -> Vector3:
 	rayon.exclude = exclus
 	var sol := espace.intersect_ray(rayon)
 	if not sol.is_empty():
-		voulue.y = maxf(voulue.y, (sol["position"] as Vector3).y + lerpf(garde_sol, garde_sol_derapage, _derapage))
+		voulue.y = maxf(voulue.y, (sol["position"] as Vector3).y + garde_sol)
 
 	# 2. Rien entre le bolide et la caméra (plafond du tunnel, mur) : on se
 	# rapproche tout de suite, et on repart en arrière doucement ensuite.
