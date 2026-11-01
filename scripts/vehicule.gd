@@ -137,7 +137,11 @@ signal atterrissage(force: float)
 @export var maintien_courbure_grip := 7.0  ## idem à plein grip : on redresse tout de suite
 @export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
-@export var recharge_boost_derapage := 14.0  ## jauge gagnée par seconde de dérapage
+@export var recharge_boost_derapage := 20.0  ## jauge gagnée par seconde de dérapage à pleine vitesse (5 s pour remplir)
+## Pas de jauge pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
+## (m/s) : rien en dessous du minimum, plein gain à partir de « vitesse_charge_pleine ».
+@export var vitesse_charge_min := 38.9  ## 140 km/h
+@export var vitesse_charge_pleine := 61.1  ## 220 km/h
 
 @export_group("Mode glisse (essai de Maximo : Wipeout × Art of Rally)")
 ## Conduite d'essai, activée dans le menu (Settings > Slide handling). Décoché = conduite d'origine.
@@ -192,6 +196,10 @@ var _gaz_precedent := 0.0
 var _volant := 0.0  # braquage lissé (-1..1) : le volant a du poids
 var _temps := 0.0
 var _contact_mur := false
+var _etincelles_choc: CPUParticles3D  # gerbe d'étincelles au moment du choc
+var _etincelles_frottement: CPUParticles3D  # étincelles continues quand on racle un mur
+var _point_mur := Vector3.ZERO  # dernier point de contact avec un mur
+var _normale_mur := Vector3.ZERO
 var _normale_sol := Vector3.UP
 var _depart := Transform3D.IDENTITY
 # Positions sûres récentes (au sol), pour réapparaître après une chute.
@@ -244,6 +252,67 @@ func _ready() -> void:
 		var pivot := $Carrosserie/Modele.find_child(nom, true, false) as Node3D
 		_roues_arriere.append(pivot.get_child(0) as Node3D)
 	_creer_fumees()
+	_creer_etincelles()
+
+
+## Étincelles : une gerbe à chaque choc contre un mur, et un jet continu quand on le racle.
+## Les grains restent dans le monde (ils ne suivent pas le bolide) et retombent.
+func _creer_etincelles() -> void:
+	var matiere := StandardMaterial3D.new()
+	matiere.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	matiere.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	matiere.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	matiere.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	matiere.vertex_color_use_as_albedo = true
+	matiere.albedo_color = Color.WHITE
+	var maillage := QuadMesh.new()
+	maillage.size = Vector2(0.12, 0.12)
+	maillage.material = matiere
+	var degrade := Gradient.new()
+	degrade.colors = PackedColorArray([Color(1.0, 1.0, 0.85, 1.0), Color(1.0, 0.7, 0.15, 1.0), Color(1.0, 0.3, 0.05, 0.0)])
+	degrade.offsets = PackedFloat32Array([0.0, 0.35, 1.0])
+	for choc in [true, false]:
+		var gerbe := CPUParticles3D.new()
+		gerbe.top_level = true
+		gerbe.local_coords = false
+		gerbe.emitting = false
+		gerbe.mesh = maillage
+		gerbe.color_ramp = degrade
+		gerbe.gravity = Vector3(0.0, -14.0, 0.0)
+		gerbe.direction = Vector3.UP
+		gerbe.scale_amount_min = 0.6
+		gerbe.scale_amount_max = 1.5
+		if choc:
+			gerbe.amount = 48
+			gerbe.lifetime = 0.6
+			gerbe.one_shot = true
+			gerbe.explosiveness = 0.95
+			gerbe.spread = 60.0
+			gerbe.initial_velocity_min = 5.0
+			gerbe.initial_velocity_max = 15.0
+			_etincelles_choc = gerbe
+		else:
+			gerbe.amount = 40
+			gerbe.lifetime = 0.35
+			gerbe.spread = 45.0
+			gerbe.initial_velocity_min = 3.0
+			gerbe.initial_velocity_max = 9.0
+			_etincelles_frottement = gerbe
+		add_child(gerbe)
+
+
+## Place une gerbe au point de contact, lancée vers l'extérieur du mur et vers l'arrière.
+func _orienter_etincelles(gerbe: CPUParticles3D, point: Vector3, normale: Vector3, avant: Vector3) -> void:
+	var direction := (normale * 0.7 + Vector3.UP * 0.5 - avant * 0.6).normalized()
+	gerbe.global_transform = Transform3D(Basis(Quaternion(Vector3.UP, direction)), point)
+
+
+func _gerbe_choc(point: Vector3, normale: Vector3, avant: Vector3, force: float) -> void:
+	if force < 8.0:
+		return
+	_orienter_etincelles(_etincelles_choc, point, normale, avant)
+	_etincelles_choc.restart()
+	_etincelles_choc.emitting = true
 
 
 ## Nuages de fumée aux deux roues arrière, actifs pendant un dérapage.
@@ -521,7 +590,9 @@ func _conduire_avec_grip(brut: float, manoeuvre: float, delta: float) -> void:
 		# En plein boost on ne perd pas de vitesse, et le dérapage ne recharge pas la jauge.
 		var perte := perte_vitesse_glisse if mode_glisse else perte_vitesse_derapage
 		vitesse = maxf(vitesse - vitesse * perte * absf(_glisse) / angle_glisse_max * delta, 0.0)
-		jauge_boost = minf(jauge_boost + recharge_boost_derapage * delta, jauge_max)
+		# Le gain suit la vitesse : un dérapage lent ne remplit (presque) rien.
+		var gain := smoothstep(vitesse_charge_min, vitesse_charge_pleine, vitesse)
+		jauge_boost = minf(jauge_boost + recharge_boost_derapage * gain * delta, jauge_max)
 
 
 func _avancer_tout_droit(delta: float) -> void:
@@ -611,10 +682,13 @@ func _gerer_chocs(avant: Vector3) -> void:
 		if (collision.get_position() - centre).dot(_normale_sol) < -0.3:
 			continue  # touché par-dessous : c'est encore le sol (vu de l'envers)
 		touche = true
+		_point_mur = collision.get_position()
+		_normale_mur = normale
 		var de_face := -avant.dot(normale)  # 1 = de face, 0 = on frotte
 		plus_de_face = maxf(plus_de_face, de_face)
 		if de_face > 0.1 and not _contact_mur:
 			mur_touche.emit(vitesse * de_face)
+			_gerbe_choc(_point_mur, normale, avant, vitesse * de_face)
 			vitesse *= 1.0 - perte_choc * de_face
 			# L'obstacle nous dévie : on repart le long de sa paroi.
 			var le_long := avant - normale * avant.dot(normale)
@@ -638,6 +712,11 @@ func _gerer_chocs(avant: Vector3) -> void:
 		# qu'on avance vraiment (sinon le compteur s'affole contre un bloc).
 		# Pas quand on glisse le long d'un mur : là, on garde sa vitesse.
 		vitesse = minf(vitesse, maxf(get_real_velocity().dot(avant), 0.0) + 5.0)
+	# Jet d'étincelles tant qu'on racle un mur à bonne vitesse.
+	var racle := touche and _contact_mur and vitesse > 12.0
+	if racle:
+		_orienter_etincelles(_etincelles_frottement, _point_mur, _normale_mur, avant)
+	_etincelles_frottement.emitting = racle
 	_contact_mur = touche
 
 
@@ -709,6 +788,9 @@ func _garder_sur_la_piste() -> void:
 	if not _contact_mur:
 		# La force du choc dépend de l'angle : de face ça fait mal, en frottant moins.
 		mur_touche.emit(vitesse * absf(sin(_cap)))
+		var cote := signf(position.x)
+		_gerbe_choc(global_position + Vector3(cote * 0.6, 0.4, 0.0), Vector3(-cote, 0.0, 0.0),
+			Vector3(-sin(_cap), 0.0, -cos(_cap)), vitesse * absf(sin(_cap)) + 10.0)
 		vitesse *= 0.8
 		_cap *= 0.3  # le mur nous redresse
 	_contact_mur = true
