@@ -24,6 +24,9 @@ extends Camera3D
 @export var fov_distorsion := 160.0  ## champ de vision pendant le boost : l'espace semble se déformer
 @export var recul_max := 3.0  ## la caméra « décroche » quand le boost démarre
 @export var secousse_pleine_vitesse := 0.08  ## tremblement en plein boost (monte progressivement avec la vitesse)
+## Taille de la secousse à l'écran : part de la demi-hauteur de l'image par unité de force.
+## La caméra PIVOTE (au lieu de se décaler) : tout l'écran bouge pareil, décor lointain compris.
+@export var secousse_ecran := 0.12
 ## Poursuite : derrière le bolide. Cockpit : depuis le siège du pilote.
 ## Capot : sur le nez du bolide.
 ## Poursuite lointaine : plus loin et plus haut.
@@ -94,8 +97,15 @@ func _physics_process(delta: float) -> void:
 	# 4. Tremblements : permanents en boost, plus forts lors des chocs.
 	var secousse_vitesse := pow(ratio, 4.0) * secousse_pleine_vitesse
 	var amplitude := _secousse + (0.06 if cible.en_boost else 0.0) + ratio * 0.015 + secousse_vitesse
-	h_offset = randf_range(-amplitude, amplitude)
-	v_offset = randf_range(-amplitude, amplitude)
+	# On fait pivoter la caméra plutôt que de la décaler (h_offset / v_offset la déplacent de côté :
+	# le bolide, tout proche, sautait alors à l'écran alors que le décor lointain restait immobile).
+	# L'angle est calculé pour que la secousse ait la même taille à l'écran quel que soit le champ de vision.
+	h_offset = 0.0
+	v_offset = 0.0
+	var demi_champ := tan(deg_to_rad(fov) * 0.5)
+	var taille := amplitude * secousse_ecran
+	rotate_object_local(Vector3.UP, atan(randf_range(-taille, taille) * demi_champ))
+	rotate_object_local(Vector3.RIGHT, atan(randf_range(-taille, taille) * demi_champ))
 	# À pleine vitesse, l'image penche aussi un peu de gauche à droite.
 	rotate_object_local(Vector3.BACK, randf_range(-1.0, 1.0) * secousse_vitesse * 0.15)
 	_secousse = move_toward(_secousse, 0.0, delta * 1.5)
