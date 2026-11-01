@@ -26,8 +26,15 @@ extends Camera3D
 @export var rapidite_derapage := 4.0  ## vitesse de la transition vers la caméra de dérapage
 @export var fov_min := 68.0
 @export var fov_max := 112.0  ## atteint à pleine vitesse
-@export var fov_distorsion := 160.0  ## champ de vision pendant le boost : l'espace semble se déformer
-@export var recul_max := 3.0  ## la caméra « décroche » quand le boost démarre
+## Caméra de boost : au départ du boost la caméra « décroche » (elle recule vite et le champ de
+## vision s'ouvre), puis elle revient doucement à sa place normale pendant tout le boost, pour
+## finir exactement en position normale quand il se termine. On sent que le bolide accélère si
+## fort que la caméra n'arrive pas à suivre.
+@export var recul_boost := 5.0  ## m : de combien la caméra recule au plus (au départ du boost)
+@export var fov_boost_pic := 179.0  ## champ de vision au plus fort du décrochage (Godot plafonne à 179)
+@export var attaque_boost := 0.25  ## s : temps pour décrocher au départ du boost
+@export var courbe_retour := 1.0  ## 1 = retour régulier ; > 1 : revient vite puis finit doucement ; < 1 : reste loin plus longtemps
+@export var recul_max := 1.0  ## recul dû aux accélérations normales (pas au boost)
 @export var secousse_pleine_vitesse := 0.08  ## tremblement en plein boost (monte progressivement avec la vitesse)
 ## Taille de la secousse à l'écran : part de la demi-hauteur de l'image par unité de force.
 ## La caméra PIVOTE (au lieu de se décaler) : tout l'écran bouge pareil, décor lointain compris.
@@ -46,6 +53,8 @@ var _recul := 0.0
 var _secousse := 0.0
 var _haut := Vector3.UP  # le « haut » de la caméra, lissé
 var _pente := 0.0  # angle de la route (en radians, > 0 en montée), lissé
+var _temps_boost := 0.0  # secondes écoulées depuis le départ du boost
+var _decrochage := 0.0  # 0 = caméra normale, 1 = décrochage maximal (lissé)
 var _derapage := 0.0  # 0 = caméra normale, 1 = caméra de dérapage (lissé)
 var _cote := 1.0  # de quel côté la caméra se place pendant un dérapage (lissé)
 var _place_libre := 1.0  # part de la distance voulue sans obstacle entre le bolide et la caméra
@@ -83,6 +92,7 @@ func _physics_process(delta: float) -> void:
 	var acceleration := (cible.vitesse - _vitesse_precedente) / delta
 	_vitesse_precedente = cible.vitesse
 	_recul = lerpf(_recul, clampf(acceleration * 0.04, -1.0, recul_max), 1.0 - exp(-3.0 * delta))
+	_mettre_a_jour_decrochage(delta)
 
 	if Input.is_action_just_pressed("camera"):
 		_changer_vue(ORDRE_VUES[(ORDRE_VUES.find(vue) + 1) % ORDRE_VUES.size()])
@@ -97,9 +107,10 @@ func _physics_process(delta: float) -> void:
 	# 3. Le champ de vision s'élargit avec la vitesse : c'est l'effet le plus fort.
 	var ratio := clampf(cible.vitesse / cible.vitesse_boost, 0.0, 1.0)
 	var fov_voulu := lerpf(fov_min, fov_max, pow(ratio, 1.4))
-	# Pendant le boost, le champ de vision s'ouvre encore plus : le temps et l'espace se déforment.
-	fov_voulu = lerpf(fov_voulu, fov_distorsion, cible.distorsion)
-	fov = lerpf(fov, fov_voulu, 1.0 - exp(-4.0 * delta))
+	# Pendant le boost, le champ de vision s'ouvre au maximum puis revient avec la caméra.
+	fov_voulu = lerpf(fov_voulu, fov_boost_pic, _decrochage)
+	var rapidite_fov := 14.0 if (cible.en_boost or _decrochage > 0.01) else 4.0
+	fov = lerpf(fov, fov_voulu, 1.0 - exp(-rapidite_fov * delta))
 
 	# 4. Tremblements : permanents en boost, plus forts lors des chocs.
 	var secousse_vitesse := pow(ratio, 4.0) * secousse_pleine_vitesse
@@ -118,12 +129,30 @@ func _physics_process(delta: float) -> void:
 	_secousse = move_toward(_secousse, 0.0, delta * 1.5)
 
 
+## Le décrochage du boost : monte vite au départ, puis redescend en ligne droite jusqu'à 0
+## pile à la fin du boost (« duree_boost »).
+func _mettre_a_jour_decrochage(delta: float) -> void:
+	var voulu := 0.0
+	if cible.en_boost:
+		_temps_boost += delta
+		var duree := maxf(cible.duree_boost, attaque_boost + 0.1)
+		if _temps_boost < attaque_boost:
+			voulu = smoothstep(0.0, 1.0, _temps_boost / attaque_boost)
+		else:
+			voulu = pow(clampf(1.0 - (_temps_boost - attaque_boost) / (duree - attaque_boost), 0.0, 1.0), courbe_retour)
+	else:
+		_temps_boost = 0.0
+	# Un léger lissage évite les à-coups (et ramène vite la caméra si le boost s'arrête).
+	_decrochage = lerpf(_decrochage, voulu, 1.0 - exp(-12.0 * delta))
+
+
 ## Vue de poursuite (proche ou lointaine). « arriere » : direction horizontale vers l'arrière du bolide.
 func _placer_en_poursuite(arriere: Vector3, delta: float) -> void:
 	var loin := vue == 3
 	var drift_voulu := 1.0 if (cible.en_derapage and cible.is_on_floor()) else 0.0
 	_derapage = lerpf(_derapage, drift_voulu, 1.0 - exp(-rapidite_derapage * delta))
 	var recul := lerpf((distance_loin if loin else distance) + _recul, distance_derapage + _recul * 0.3, _derapage)
+	recul += _decrochage * recul_boost
 	var haut_camera := hauteur_loin if loin else hauteur
 	# Côté du plan : à l'extérieur du virage, là où on voit le flanc de la voiture.
 	_cote = lerpf(_cote, -signf(cible.glisse_signee()) if absf(cible.glisse_signee()) > 0.02 else _cote, 1.0 - exp(-3.0 * delta))
