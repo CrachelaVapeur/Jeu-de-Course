@@ -111,7 +111,11 @@ signal atterrissage(force: float)
 @export var raideur_volant := 9.0  ## plus c'est petit, plus le volant met de temps à tourner
 @export var inertie_lacet := 7.0  ## plus c'est petit, plus le bolide met de temps à pivoter (poids)
 @export var facteur_rotation := 1.0  ## multiplie la vitesse de rotation (1 = comme avant)
-@export var rigidite_haute_vitesse := 0.0  ## part de rotation perdue à pleine vitesse hors dérapage : sans dérapage, pas de virage serré
+## Direction lourde à haute vitesse, seulement tant que l'arrière accroche : sans dérapage, pas de
+## virage serré à fond de train. Elle s'efface en douceur à mesure que le grip chute (en dérapage,
+## le volant est léger, comme dans OutRun). 0 = pas d'effet, 0.55 = 55 % de rotation perdue à vitesse max.
+@export var rigidite_haute_vitesse := 0.55
+@export var vitesse_debut_rigidite := 50.0  ## m/s (180 km/h) : en dessous, le volant reste léger
 
 @export_group("Dérapage (vrais circuits)")
 ## UNE seule variable pilote tout : le « grip » de l'arrière (1 = pleine adhérence, 0 = il glisse).
@@ -121,7 +125,11 @@ signal atterrissage(force: float)
 ## - plus le grip est bas, plus le nez se met en travers, plus la courbure est « tenue » (volant
 ##   lâché = on garde l'élan) et plus elle change progressivement (jamais de saut de côté) ;
 ## - en dessous de « seuil_derapage », on est « en dérapage » (fumée, recharge de boost).
-@export var vitesse_min_derapage := 27.8  ## m/s (100 km/h) : en dessous, le grip revient et rien ne peut le faire chuter
+@export var vitesse_min_derapage := 41.7  ## m/s (150 km/h) : en dessous, on ne peut pas ENTRER en dérapage
+@export var vitesse_garde_derapage := 30.6  ## m/s (110 km/h) : un dérapage déjà lancé tient jusque-là, puis le grip revient
+## Part de l'accélération qui reste pendant un dérapage : dériver coûte de la vitesse, on ne peut
+## pas le tenir gratuitement à bas régime en gardant le gaz à fond. 1 = aucune pénalité.
+@export var acceleration_en_derapage := 0.1
 @export var seuil_derapage := 0.6  ## grip en dessous duquel on est « en dérapage »
 @export var impulsion_appui := 0.8  ## grip perdu d'un coup à un appui sur frein ou Espace
 @export var impulsion_levee := 0.5  ## grip perdu d'un coup quand on lâche le gaz
@@ -139,7 +147,7 @@ signal atterrissage(force: float)
 @export var maintien_courbure_sans_gaz := 1.0  ## idem sans les gaz : lever le pied aide à redresser
 @export var maintien_courbure_grip := 7.0  ## idem à plein grip : on redresse tout de suite
 @export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
-@export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
+@export var perte_vitesse_derapage := 0.25  ## part de vitesse perdue par seconde à glisse maximale
 ## Pas de style pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
 ## (m/s) : rien en dessous du minimum, plein gain à partir de « vitesse_charge_pleine ».
 @export var vitesse_charge_min := 38.9  ## 140 km/h
@@ -191,6 +199,7 @@ var _style_attente := 0.0  # délai avant que la jauge Devilmaydrive commence à
 var _ignorer_boost := false  # vrai après une perte de focus, jusqu'au relâchement de la touche
 var _omega := 0.0  # vitesse de rotation de la trajectoire en dérapage (rad/s) : la courbure
 var _appui_en_attente := false  # un appui frein/Espace reçu, pas encore pris en compte par la physique
+var _derapage_tenu := false  # vrai depuis un appui à bonne vitesse, jusqu'à ce qu'on retombe sous la vitesse de maintien
 var _gaz_precedent := 0.0
 var _volant := 0.0  # braquage lissé (-1..1) : le volant a du poids
 var _temps := 0.0
@@ -480,7 +489,10 @@ func _conduire(delta: float) -> void:
 			vitesse = move_toward(vitesse, vitesse_max_actuelle(), freinage_apres_boost * delta)
 		elif gaz > 0.0:
 			# En marche arrière, accélérer commence par freiner.
-			var poussee_avant := acceleration if vitesse >= 0.0 else freinage
+			var poussee_avant := freinage
+			if vitesse >= 0.0:
+				# En dérapage, l'accélération est très réduite : dériver coûte de la vitesse.
+				poussee_avant = acceleration * lerpf(1.0, acceleration_en_derapage, 1.0 - smoothstep(0.2, 1.0, _grip))
 			vitesse = move_toward(vitesse, vitesse_max_actuelle() * gaz, poussee_avant * delta)
 		elif frein <= 0.0:
 			vitesse = move_toward(vitesse, 0.0, frottement * delta)
@@ -510,7 +522,9 @@ func _conduire(delta: float) -> void:
 
 ## Vitesse de rotation maximale du volant, en tenant compte du grip (un peu plus vive quand il est bas).
 func _rotation_max(manoeuvre: float) -> float:
-	return vitesse_rotation_circuit * facteur_rotation * manoeuvre * lerpf(facteur_rotation_derapage, 1.0, _grip)
+	# La rigidité à haute vitesse ne compte qu'avec du grip : elle fond en douceur quand on glisse (pas de saut).
+	var rigide := 1.0 - rigidite_haute_vitesse * smoothstep(vitesse_debut_rigidite, vitesse_max, vitesse) * smoothstep(0.4, 0.9, _grip)
+	return vitesse_rotation_circuit * facteur_rotation * manoeuvre * rigide * lerpf(facteur_rotation_derapage, 1.0, _grip)
 
 
 ## L'unique variable : le grip de l'arrière. Les appuis le font chuter, le temps le fait remonter.
@@ -520,8 +534,12 @@ func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 	var levee := _gaz_precedent > 0.5 and gaz < 0.1
 	_gaz_precedent = gaz
 
-	if vitesse < vitesse_min_derapage:
-		# Trop lent : le grip revient, et rien ne peut le faire chuter.
+	# Pour entrer en dérapage il faut de la vitesse ; une fois dedans, on tient plus bas.
+	var vitesse_requise := vitesse_garde_derapage if en_derapage else vitesse_min_derapage
+	if vitesse < vitesse_requise:
+		# Trop lent : le grip revient, et rien ne peut le faire chuter. Le dérapage est perdu pour de
+		# bon : il faudra un nouvel appui (à bonne vitesse) pour en relancer un.
+		_derapage_tenu = false
 		_grip = minf(_grip + 3.0 * delta, 1.0)
 	else:
 		if appui:
@@ -534,13 +552,23 @@ func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 			elif absf(brut) > braquage_glisse and gaz > 0.3:
 				_grip = maxf(_grip - perte_grip_braquage * delta, grip_frein_a_main)  # braquer fort fait glisser
 		var plancher := 1.0
-		if Input.is_action_pressed("deraper"):
+		# Tenir Espace ou le frein ne fait que MAINTENIR un dérapage déjà lancé : pour en démarrer
+		# un, il faut un appui (ou lâcher le gaz). Sinon, Espace tenu + gaz rentrerait en dérapage
+		# en boucle dès qu'on repasse la vitesse minimale.
+		if appui or levee:
+			_derapage_tenu = true
+		var peut_tenir := _derapage_tenu and (en_derapage or appui or levee)
+		if Input.is_action_pressed("deraper") and peut_tenir:
 			plancher = grip_frein_a_main
-		elif Input.get_action_strength("freiner") > 0.3 and absf(brut) > 0.1:
+		elif Input.get_action_strength("freiner") > 0.3 and absf(brut) > 0.1 and peut_tenir:
 			plancher = grip_frein
 		if plancher < 1.0:
 			# Frein à main ou frein tenu : on maintient le grip bas.
 			_grip = move_toward(_grip, minf(plancher, _grip), 3.0 * delta)
+		elif not _derapage_tenu and not mode_glisse:
+			# Dérapage perdu (on est retombé sous la vitesse de maintien) : l'arrière se replante
+			# vite, même en braquant, sinon on resterait en glisse en réaccélérant.
+			_grip = minf(_grip + 3.0 * delta, 1.0)
 		else:
 			var rec := recuperation_en_virage if absf(brut) > 0.1 else recuperation
 			_grip = minf(_grip + rec * delta, 1.0)
