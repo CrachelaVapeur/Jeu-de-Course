@@ -27,10 +27,9 @@ signal rapport_change(rapport: int)
 @export_group("Vitesse (en mètres par seconde, ×3.6 pour des km/h)")
 @export var vitesse_max := 85.0  ## environ 306 km/h sans boost
 @export var vitesse_boost := 146.0  ## environ 525 km/h : la vitesse la plus haute du jeu
-## Accélération (m/s²) rapport par rapport : forte en 1re, de plus en plus faible ensuite.
-## (Valeurs actuelles : à mi-chemin entre l'ancienne accélération unique de 26 et la version très
-## progressive [10, 8, 6, 4,5, 3,5, 2,5].) La boîte est décrite plus bas.
-@export var acceleration_par_rapport: Array[float] = [18.0, 17.0, 16.0, 15.25, 14.75, 14.25]
+## Accélération (m/s²) au 1er rapport. Les autres rapports en déduisent la leur avec leur
+## rapport de démultiplication (voir « rapports » dans la boîte de vitesses).
+@export var acceleration_premier_rapport := 22.0
 @export var acceleration_boost := 82.0  ## atteinte au bout de la montée du boost
 @export var freinage := 60.0
 @export var frottement := 8.0
@@ -48,11 +47,17 @@ signal rapport_change(rapport: int)
 ## Boîte automatique à 6 rapports + marche arrière. Pour l'instant elle ne change PAS la conduite :
 ## elle donne le rapport et le régime moteur (pour l'affichage et le son). Le rapport se déduit de
 ## la vitesse. Plus tard : rétrograder pour entrer en dérapage, frein moteur, etc.
-## Vitesse (part de la vitesse max de base) à laquelle chaque rapport commence : 1er, 2e... 6e.
-@export var seuils_rapports: Array[float] = [0.0, 0.15, 0.32, 0.50, 0.68, 0.84]
+## Rapports de démultiplication, comme une vraie boîte 6 vitesses de muscle car (type TREMEC T-56) :
+## 1re 2.66, 2e 1.78, 3e 1.30, 4e 1.00 (prise directe), 5e 0.74, 6e 0.50 (surmultipliée).
+## Plus le rapport est grand, plus le moteur pousse fort mais moins la vitesse peut monter.
+@export var rapports: Array[float] = [2.66, 1.78, 1.30, 1.00, 0.74, 0.50]
+## Part de la vitesse maximale d'un rapport à laquelle la boîte passe le suivant (1 = au rupteur).
+@export var regime_passage := 0.9
+## À quel point le rapport change la poussée : 1 = fidèle à la vraie physique (la 6e pousse
+## 5 fois moins que la 1re), 0 = tous les rapports poussent pareil.
+@export_range(0.0, 1.0) var poids_des_rapports := 0.6
 @export var hysteresis_rapport := 0.04  ## on rétrograde un peu plus bas qu'on a monté (évite de battre)
 @export var regime_ralenti := 0.2  ## régime au repos (0 à 1)
-@export var regime_bas := 0.5  ## régime juste après un changement de rapport
 @export var reactivite_regime := 14.0  ## plus c'est grand, plus le régime suit vite (la chute après un passage se voit)
 
 @export_group("Boost")
@@ -422,25 +427,29 @@ func _mettre_a_jour_boite(delta: float) -> void:
 		if rapport < 1:
 			rapport = 1
 		var relatif := vitesse / vitesse_max
-		var dernier := seuils_rapports.size()
-		while rapport < dernier and relatif >= seuils_rapports[rapport]:
+		var dernier := rapports.size()
+		while rapport < dernier and relatif >= _vitesse_de_passage(rapport):
 			rapport += 1
-		while rapport > 1 and relatif < seuils_rapports[rapport - 1] - hysteresis_rapport:
+		while rapport > 1 and relatif < _vitesse_de_passage(rapport - 1) - hysteresis_rapport:
 			rapport -= 1
-		var debut: float = seuils_rapports[rapport - 1]
-		var fin: float = seuils_rapports[rapport] if rapport < dernier else vitesse_boost / vitesse_max
-		var avancement := clampf((relatif - debut) / maxf(fin - debut, 0.01), 0.0, 1.0)
-		var bas := regime_ralenti if rapport == 1 else regime_bas
-		cible = lerpf(bas, 1.0, avancement)
+		# Le régime suit la vitesse ET le rapport : il retombe après chaque passage.
+		cible = clampf(relatif * rapports[rapport - 1] / rapports[dernier - 1], regime_ralenti, 1.0)
 	regime = lerpf(regime, cible, 1.0 - exp(-reactivite_regime * delta))
 	if rapport != ancien:
 		rapport_change.emit(rapport)
 
 
+## Vitesse (part de la vitesse max de base) à laquelle on passe du rapport n au suivant :
+## la vitesse max du rapport n (= celle de la dernière vitesse × rapport_dernier / rapport_n),
+## que multiplie « regime_passage ».
+func _vitesse_de_passage(n: int) -> float:
+	return regime_passage * rapports[rapports.size() - 1] / rapports[n - 1]
+
+
 ## L'accélération du rapport engagé (le 1er rapport sert aussi à l'arrêt).
 func acceleration_du_rapport() -> float:
-	var i := clampi(rapport - 1, 0, acceleration_par_rapport.size() - 1)
-	return acceleration_par_rapport[i]
+	var i := clampi(rapport - 1, 0, rapports.size() - 1)
+	return acceleration_premier_rapport * pow(rapports[i] / rapports[0], poids_des_rapports)
 
 
 func rapport_texte() -> String:
