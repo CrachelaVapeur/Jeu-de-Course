@@ -409,6 +409,11 @@ func cap_camera() -> float:
 	return _cap - _glisse * 0.75
 
 
+## Angle de glisse (radians) : positif quand le nez est tourné vers la gauche de la trajectoire.
+func glisse_signee() -> float:
+	return _glisse
+
+
 ## Un choc contre un mur fait retomber la jauge au palier juste en dessous (à 66 % avec 4 paliers : 50 %).
 func _perdre_un_palier() -> void:
 	var palier := style_max / float(style_segments)

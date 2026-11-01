@@ -19,6 +19,13 @@ extends Camera3D
 @export var suivi_pente := 0.85
 @export var retard_pente := 4.0  ## plus c'est petit, plus la caméra met de temps à suivre la pente
 @export var garde_sol := 0.9  ## hauteur minimale de la caméra au-dessus de la route ou du terrain
+## Caméra de dérapage (vues de poursuite) : plus près, au ras du sol, pour un plan dramatique
+## qui montre toute la voiture de travers.
+@export var distance_derapage := 5.2
+@export var hauteur_derapage := 0.5
+@export var garde_sol_derapage := 0.25  ## la caméra peut descendre presque à la hauteur de la route
+@export var decalage_derapage := 1.4  ## m : la caméra se met un peu de côté (3/4 arrière) pour voir le flanc
+@export var rapidite_derapage := 4.0  ## vitesse de la transition vers la caméra de dérapage
 @export var fov_min := 68.0
 @export var fov_max := 112.0  ## atteint à pleine vitesse
 @export var fov_distorsion := 160.0  ## champ de vision pendant le boost : l'espace semble se déformer
@@ -41,6 +48,8 @@ var _recul := 0.0
 var _secousse := 0.0
 var _haut := Vector3.UP  # le « haut » de la caméra, lissé
 var _pente := 0.0  # angle de la route (en radians, > 0 en montée), lissé
+var _derapage := 0.0  # 0 = caméra normale, 1 = caméra de dérapage (lissé)
+var _cote := 1.0  # de quel côté la caméra se place pendant un dérapage (lissé)
 var _place_libre := 1.0  # part de la distance voulue sans obstacle entre le bolide et la caméra
 var _reglages: Node  # l'autoload des réglages (la vue choisie y est gardée)
 
@@ -114,8 +123,12 @@ func _physics_process(delta: float) -> void:
 ## Vue de poursuite (proche ou lointaine). « arriere » : direction horizontale vers l'arrière du bolide.
 func _placer_en_poursuite(arriere: Vector3, delta: float) -> void:
 	var loin := vue == 3
-	var recul := (distance_loin if loin else distance) + _recul
-	var haut_camera := hauteur_loin if loin else hauteur
+	var drift_voulu := 1.0 if (cible.en_derapage and cible.is_on_floor()) else 0.0
+	_derapage = lerpf(_derapage, drift_voulu, 1.0 - exp(-rapidite_derapage * delta))
+	var recul := lerpf((distance_loin if loin else distance) + _recul, distance_derapage + _recul * 0.3, _derapage)
+	var haut_camera := lerpf(hauteur_loin if loin else hauteur, hauteur_derapage, _derapage)
+	# Côté du plan : à l'extérieur du virage, là où on voit le flanc de la voiture.
+	_cote = lerpf(_cote, -signf(cible.glisse_signee()) if absf(cible.glisse_signee()) > 0.02 else _cote, 1.0 - exp(-3.0 * delta))
 
 	# Sur une paroi, la caméra se place au-dessus du bolide par rapport à
 	# la paroi (pas dans le vide) et penche avec lui.
@@ -140,10 +153,12 @@ func _placer_en_poursuite(arriere: Vector3, delta: float) -> void:
 	# au-dessus du bolide par rapport à la route, et regarde la route devant.
 	var avant_pente := avant * cos(_pente) + Vector3.UP * sin(_pente)
 
-	var voulue := cible.global_position - avant_pente * recul + _haut * haut_camera
+	var cote_vec := _haut.cross(avant_pente).normalized()  # vers la gauche de la route
+	var voulue := cible.global_position - avant_pente * recul + _haut * haut_camera + cote_vec * (_cote * decalage_derapage * _derapage)
 	voulue = _eviter_le_decor(voulue, delta)
 	global_position = voulue
-	look_at(cible.global_position + avant_pente * 12.0 + _haut * 1.0, _haut)
+	var portee := lerpf(12.0, 4.0, _derapage)
+	look_at(cible.global_position + avant_pente * portee + _haut * lerpf(1.0, 0.6, _derapage), _haut)
 
 
 ## Garde la caméra hors du décor : au-dessus de la route et du terrain, et
@@ -158,7 +173,7 @@ func _eviter_le_decor(voulue: Vector3, delta: float) -> Vector3:
 	rayon.exclude = exclus
 	var sol := espace.intersect_ray(rayon)
 	if not sol.is_empty():
-		voulue.y = maxf(voulue.y, (sol["position"] as Vector3).y + garde_sol)
+		voulue.y = maxf(voulue.y, (sol["position"] as Vector3).y + lerpf(garde_sol, garde_sol_derapage, _derapage))
 
 	# 2. Rien entre le bolide et la caméra (plafond du tunnel, mur) : on se
 	# rapproche tout de suite, et on repart en arrière doucement ensuite.
