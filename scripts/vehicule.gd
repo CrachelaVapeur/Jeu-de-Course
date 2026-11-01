@@ -211,7 +211,7 @@ var _cap := 0.0  # angle du bolide autour de l'axe vertical (là où pointe le n
 var _cap_trajectoire := 0.0  # direction dans laquelle on se déplace vraiment
 var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à gauche)
 var _traces: MultiMeshInstance3D  # traces noires sur la route
-var _fumees: Array[CPUParticles3D] = []  # nuages de gomme aux roues arrière
+var _fumee: MultiMeshInstance3D  # nuages 3D low poly aux roues arrière
 var _grip := 1.0  # adhérence de l'arrière : 1 = normale, 0 = glisse totale
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
 var _boost_en_attente := false  # un appui boost reçu, pas encore pris en compte par la physique
@@ -278,7 +278,8 @@ func _ready() -> void:
 	for nom in ["RoueArG", "RoueArD"]:
 		var pivot := $Carrosserie/Modele.find_child(nom, true, false) as Node3D
 		_roues_arriere.append(pivot.get_child(0) as Node3D)
-	_creer_fumees()
+	_fumee = preload("res://scripts/fumee_pneus.gd").new()
+	add_child(_fumee)
 	_traces = preload("res://scripts/traces_pneus.gd").new()
 	add_child(_traces)
 	_creer_etincelles()
@@ -344,67 +345,6 @@ func _gerbe_choc(point: Vector3, normale: Vector3, avant: Vector3, force: float)
 	_etincelles_choc.emitting = true
 
 
-## Nuages de fumée aux deux roues arrière, actifs pendant un dérapage.
-## Ils restent dans le monde (ils ne suivent pas le bolide) : ça dessine une traînée.
-func _creer_fumees() -> void:
-	# Des nuages en 3D low poly : de petits icosaèdres à facettes (pas de sprite plat),
-	# qui grossissent puis rétrécissent. Opaques, donc pas de souci de transparence.
-	var matiere := StandardMaterial3D.new()
-	matiere.albedo_color = Color(0.93, 0.94, 1.0)
-	matiere.roughness = 1.0
-	matiere.emission_enabled = true
-	matiere.emission = Color(0.8, 0.82, 0.88)
-	matiere.emission_energy_multiplier = 0.9
-	var maillage := _icosaedre_facettes()
-	maillage.surface_set_material(0, matiere)
-	var croissance := Curve.new()
-	croissance.add_point(Vector2(0.0, 0.35))
-	croissance.add_point(Vector2(0.3, 1.0))
-	croissance.add_point(Vector2(1.0, 0.0))
-	for pivot in _roues_arriere_pivots():
-		var nuage := CPUParticles3D.new()
-		nuage.local_coords = false
-		nuage.emitting = false
-		nuage.amount = 110
-		nuage.lifetime = 1.2
-		nuage.mesh = maillage
-		nuage.direction = Vector3(0.0, 1.0, 0.0)
-		nuage.spread = 35.0
-		nuage.initial_velocity_min = 0.6
-		nuage.initial_velocity_max = 2.2
-		nuage.gravity = Vector3(0.0, 0.4, 0.0)
-		nuage.scale_amount_min = 0.6
-		nuage.scale_amount_max = 1.1
-		nuage.scale_amount_curve = croissance
-		nuage.particle_flag_rotate_y = true
-		nuage.angle_min = 0.0
-		nuage.angle_max = 360.0
-		nuage.position = to_local(pivot.global_position) * Vector3(1.0, 0.0, 1.0) + Vector3(0.0, 0.15, 0.0)
-		add_child(nuage)
-		_fumees.append(nuage)
-
-
-## Un icosaèdre (20 triangles) aux faces plates : le nuage « low poly ».
-func _icosaedre_facettes() -> ArrayMesh:
-	var t := (1.0 + sqrt(5.0)) / 2.0
-	var p: Array[Vector3] = [
-		Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0),
-		Vector3(0, -1, t), Vector3(0, 1, t), Vector3(0, -1, -t), Vector3(0, 1, -t),
-		Vector3(t, 0, -1), Vector3(t, 0, 1), Vector3(-t, 0, -1), Vector3(-t, 0, 1)]
-	var f := [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
-		[1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
-		[3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
-		[4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_smooth_group(-1)
-	for tri in f:
-		for i in tri:
-			st.add_vertex(p[i].normalized() * 0.5)
-	st.generate_normals()
-	return st.commit()
-
-
 ## Pose les traces de pneus sous les roues arrière tant qu'on dérape.
 func _laisser_traces() -> void:
 	var trace := en_derapage and is_on_floor() and absf(vitesse) > 8.0
@@ -413,8 +353,10 @@ func _laisser_traces() -> void:
 		if trace:
 			var contact := pivots[i].global_position - _normale_sol * RAYON_ARRIERE
 			_traces.tracer(i, contact, _normale_sol)
+			_fumee.emettre(i, contact + _normale_sol * 0.25)
 		else:
 			_traces.lever(i)
+			_fumee.lever(i)
 
 
 func _roues_arriere_pivots() -> Array[Node3D]:
@@ -451,8 +393,6 @@ func _physics_process(delta: float) -> void:
 		_avancer_sur_le_relief(delta)
 		_surveiller_chute(delta)
 	_animer(delta)
-	for nuage in _fumees:
-		nuage.emitting = en_derapage and is_on_floor()
 	_laisser_traces()
 
 
