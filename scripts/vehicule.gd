@@ -122,6 +122,7 @@ signal rapport_change(rapport: int)
 ## doucement à l'horizontale de la paroi (sinon on rebondirait d'un bord à
 ## l'autre). Plus c'est grand, plus on reste à sa hauteur.
 @export var guidage_paroi := 5.0
+@export var duree_sans_collage_tremplin := 0.8  ## s : après un tremplin, plus d'aimantation au sol (sinon le saut est écrasé)
 @export var collage_paroi := 4.0  ## m/s : on est plaqué contre la paroi pour ne pas la quitter
 
 @export_group("Poids et direction (vrais circuits)")
@@ -684,6 +685,9 @@ func _avancer_tout_droit(delta: float) -> void:
 	position += direction * vitesse * delta
 
 
+var _temps_tremplin := 0.0
+
+
 func _avancer_sur_le_relief(delta: float) -> void:
 	var en_l_air := not is_on_floor()
 	if not en_l_air:
@@ -711,7 +715,15 @@ func _avancer_sur_le_relief(delta: float) -> void:
 
 	var vitesse_chute := -velocity.y
 	move_and_slide()
-	if not en_l_air and not is_on_floor():
+	# Sur un tremplin : pas d'aimantation, c'est lui qui doit nous lancer.
+	if is_on_floor():
+		for i in get_slide_collision_count():
+			var contact := get_slide_collision(i)
+			var corps: Object = contact.get_collider()
+			if contact.get_normal().y > 0.5 and corps is Node and (corps as Node).is_in_group("tremplin"):
+				_temps_tremplin = duree_sans_collage_tremplin
+	_temps_tremplin = maxf(_temps_tremplin - delta, 0.0)
+	if not en_l_air and not is_on_floor() and _temps_tremplin <= 0.0:
 		# Godot n'aimante pas au sol un corps qui monte (vitesse vers le haut) : en côte, la
 		# moindre bosse faisait décoller le bolide (petits sauts invisibles, voiture qui
 		# « flotte », direction réduite). On l'aimante à la main ; sur un vrai tremplin ou

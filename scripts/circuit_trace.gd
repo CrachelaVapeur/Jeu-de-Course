@@ -715,7 +715,10 @@ func _construire_obstacles() -> void:
 			"pont":
 				_construire_pont(o)
 
-	_ajouter_solide(tremplins, _matiere(Color(0.95, 0.68, 0.12), 0.3))
+	# Le groupe « tremplin » dit au bolide de ne pas s'aimanter au sol quand il en part.
+	var corps_tremplins := _ajouter_solide(tremplins, _matiere(Color(0.95, 0.68, 0.12), 0.3))
+	if corps_tremplins != null:
+		corps_tremplins.add_to_group("tremplin")
 
 
 func _construire_bloc(o: Dictionary, matiere: Material, matiere_rayure: Material) -> void:
@@ -1146,12 +1149,12 @@ func _quad(st: SurfaceTool, p: Array, normale: Vector3, uv: Array = [], uv2: Arr
 
 
 ## Ajoute un objet visible ET solide (le bolide roule ou bute dessus).
-func _ajouter_solide(st: SurfaceTool, matiere: Material) -> void:
+func _ajouter_solide(st: SurfaceTool, matiere: Material) -> StaticBody3D:
 	var mesh := st.commit()
 	if mesh.get_surface_count() == 0:
-		return
+		return null
 	_ajouter_visuel_mesh(mesh, matiere)
-	_ajouter_collision_mesh(mesh)
+	return _ajouter_collision_mesh(mesh)
 
 
 ## Ajoute un objet solide mais invisible.
@@ -1161,7 +1164,7 @@ func _ajouter_collision(st: SurfaceTool) -> void:
 		_ajouter_collision_mesh(mesh)
 
 
-func _ajouter_collision_mesh(mesh: Mesh) -> void:
+func _ajouter_collision_mesh(mesh: Mesh) -> StaticBody3D:
 	var corps := StaticBody3D.new()
 	var forme := CollisionShape3D.new()
 	var trimesh := mesh.create_trimesh_shape()
@@ -1169,6 +1172,7 @@ func _ajouter_collision_mesh(mesh: Mesh) -> void:
 	forme.shape = trimesh
 	corps.add_child(forme)
 	add_child(corps)
+	return corps
 
 
 func _ajouter_visuel(st: SurfaceTool, matiere: Material) -> void:
