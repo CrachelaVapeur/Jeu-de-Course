@@ -819,6 +819,12 @@ func _gerer_chocs(avant: Vector3) -> void:
 
 
 func _surveiller_chute(delta: float) -> void:
+	# Saut raté : dès qu'on est au fond d'un trou, on repart de l'autre côté.
+	if not piste_droite and not is_on_floor() and velocity.y < -5.0:
+		var circuit := get_tree().get_first_node_in_group("circuit")
+		if circuit != null and circuit.est_tombe_dans_un_trou(global_position):
+			_reapparaitre(true)
+			return
 	if global_position.y < hauteur_chute:
 		_reapparaitre()
 		return
@@ -847,7 +853,7 @@ func reapparaitre() -> void:
 	_reapparaitre()
 
 
-func _reapparaitre() -> void:
+func _reapparaitre(saut_rate := false) -> void:
 	# On repart d'une position notée environ 1,5 s avant la chute, donc
 	# avant le trou, avec un peu de vitesse pour ne pas repartir de zéro.
 	var cible := _depart
@@ -858,6 +864,13 @@ func _reapparaitre() -> void:
 	_historique.clear()
 
 	var ancienne := global_position
+	var vitesse_reprise := vitesse_max * 0.4
+	# Saut raté : on repart de l'autre côté du trou, avec l'élan qu'on avait.
+	if saut_rate:
+		var apres: Variant = get_tree().get_first_node_in_group("circuit").reprise_apres_trou(global_position)
+		if apres != null:
+			cible = apres
+			vitesse_reprise = maxf(vitesse_reprise, vitesse)
 	global_transform = cible
 	_cap = rotation.y
 	_cap_trajectoire = _cap
@@ -867,7 +880,7 @@ func _reapparaitre() -> void:
 	_omega = 0.0
 	_volant = 0.0
 	velocity = Vector3.ZERO
-	vitesse = vitesse_max * 0.4
+	vitesse = vitesse_reprise
 	teleporte.emit(global_position - ancienne)
 
 

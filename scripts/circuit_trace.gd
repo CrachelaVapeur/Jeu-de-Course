@@ -68,6 +68,7 @@ var _affichage: Label
 
 
 func _ready() -> void:
+	add_to_group("circuit")
 	_donnees = load(fichier_circuit)
 	_hasard.seed = graine
 	_construire_courbe()
@@ -136,6 +137,32 @@ func _sous_la_route(d: float) -> bool:
 
 
 # --- Tracé --------------------------------------------------------------------
+
+## Le trou dans lequel tombe un bolide à cette position (ou un dictionnaire vide) :
+## il est au-dessus d'un trou, bien plus bas que la route.
+func _trou_sous(position_monde: Vector3) -> Dictionary:
+	var d := distance_sur_circuit(position_monde)
+	for o in _donnees.OBSTACLES:
+		if o.type == "trou" and d > o.a - 25.0 and d < o.a + o.longueur + 25.0:
+			if position_monde.y < _echantillon(d).y - 4.0:
+				return o
+	return {}
+
+
+func est_tombe_dans_un_trou(position_monde: Vector3) -> bool:
+	return not _trou_sous(position_monde).is_empty()
+
+
+## Où remettre un bolide qui a raté un saut : sur la route, juste après le trou.
+## Renvoie null s'il n'est pas tombé dans un trou.
+func reprise_apres_trou(position_monde: Vector3) -> Variant:
+	var meilleur := _trou_sous(position_monde)
+	if meilleur.is_empty():
+		return null
+	var t := _cadre(meilleur.a + meilleur.longueur + 12.0)
+	var basis := Basis.looking_at(t.avant, t.haut)
+	return Transform3D(basis, t.pos + t.haut * 1.0)
+
 
 ## Distance (en mètres depuis la ligne de départ) du point du circuit le plus
 ## proche d'une position. Sert au chrono, et pourra servir aux adversaires IA.
