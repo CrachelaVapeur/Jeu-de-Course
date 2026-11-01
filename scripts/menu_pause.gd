@@ -153,7 +153,7 @@ func _actualiser() -> void:
 	var style := Boutons.style_des_reglages(get_tree())
 	_bouton_conduite.text = "Handling: %s" % ("Slide (Wipeout x Art of Rally)" if glisse else "Classic")
 	_explication.text = ("Steer hard at speed to powerslide, no button needed. Boost (%s / Shift) in a slide to shoot where the nose points." % Boutons.nom("A", style)
-			if glisse else "The original handling. Drift with %s / Space or by lifting off the throttle in a turn." % Boutons.nom("RB", style))
+			if glisse else "The original handling. Drift with %s / Space or the brake above 150 km/h." % Boutons.nom("RB", style))
 	_bouton_guide.text = "Controls guide: %s" % ("On" if _g.afficher_guide else "Off")
 	var choisi: int = _g.style_manette
 	var nom_style := Boutons.NOMS_STYLES[choisi]
