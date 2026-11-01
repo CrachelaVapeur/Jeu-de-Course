@@ -28,9 +28,9 @@ signal rapport_change(rapport: int)
 @export var vitesse_max := 85.0  ## environ 306 km/h sans boost
 @export var vitesse_boost := 146.0  ## environ 525 km/h : la vitesse la plus haute du jeu
 ## Accélération (m/s²) rapport par rapport : forte en 1re, de plus en plus faible ensuite.
-## (1re : 10, 2e : 8, 3e : 6, 4e : 4,5, 5e : 3,5, 6e : 2,5 donne environ 3 s de 0 à 100 km/h
-## et 18 s pour atteindre la vitesse max de base.) La boîte est décrite plus bas.
-@export var acceleration_par_rapport: Array[float] = [10.0, 8.0, 6.0, 4.5, 3.5, 2.5]
+## (Valeurs actuelles : à mi-chemin entre l'ancienne accélération unique de 26 et la version très
+## progressive [10, 8, 6, 4,5, 3,5, 2,5].) La boîte est décrite plus bas.
+@export var acceleration_par_rapport: Array[float] = [18.0, 17.0, 16.0, 15.25, 14.75, 14.25]
 @export var acceleration_boost := 82.0  ## atteinte au bout de la montée du boost
 @export var freinage := 60.0
 @export var frottement := 8.0
@@ -146,7 +146,7 @@ signal rapport_change(rapport: int)
 @export var vitesse_garde_derapage := 30.6  ## m/s (110 km/h) : un dérapage déjà lancé tient jusque-là, puis le grip revient
 ## Part de l'accélération qui reste pendant un dérapage : dériver coûte de la vitesse, on ne peut
 ## pas le tenir gratuitement à bas régime en gardant le gaz à fond. 1 = aucune pénalité.
-@export var acceleration_en_derapage := 0.3
+@export var acceleration_en_derapage := 0.2
 @export var seuil_derapage := 0.6  ## grip en dessous duquel on est « en dérapage »
 @export var impulsion_appui := 0.8  ## grip perdu d'un coup à un appui sur frein ou Espace
 @export var grip_frein_a_main := 0.2  ## grip maintenu tant qu'Espace est tenu
