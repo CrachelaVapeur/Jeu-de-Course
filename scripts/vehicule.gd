@@ -27,7 +27,10 @@ signal rapport_change(rapport: int)
 @export_group("Vitesse (en mètres par seconde, ×3.6 pour des km/h)")
 @export var vitesse_max := 85.0  ## environ 306 km/h sans boost
 @export var vitesse_boost := 146.0  ## environ 525 km/h : la vitesse la plus haute du jeu
-@export var acceleration := 26.0
+## Accélération (m/s²) rapport par rapport : forte en 1re, de plus en plus faible ensuite.
+## (1re : 10, 2e : 8, 3e : 6, 4e : 4,5, 5e : 3,5, 6e : 2,5 donne environ 3 s de 0 à 100 km/h
+## et 18 s pour atteindre la vitesse max de base.) La boîte est décrite plus bas.
+@export var acceleration_par_rapport: Array[float] = [10.0, 8.0, 6.0, 4.5, 3.5, 2.5]
 @export var acceleration_boost := 82.0  ## atteinte au bout de la montée du boost
 @export var freinage := 60.0
 @export var frottement := 8.0
@@ -143,7 +146,7 @@ signal rapport_change(rapport: int)
 @export var vitesse_garde_derapage := 30.6  ## m/s (110 km/h) : un dérapage déjà lancé tient jusque-là, puis le grip revient
 ## Part de l'accélération qui reste pendant un dérapage : dériver coûte de la vitesse, on ne peut
 ## pas le tenir gratuitement à bas régime en gardant le gaz à fond. 1 = aucune pénalité.
-@export var acceleration_en_derapage := 0.1
+@export var acceleration_en_derapage := 0.3
 @export var seuil_derapage := 0.6  ## grip en dessous duquel on est « en dérapage »
 @export var impulsion_appui := 0.8  ## grip perdu d'un coup à un appui sur frein ou Espace
 @export var grip_frein_a_main := 0.2  ## grip maintenu tant qu'Espace est tenu
@@ -468,6 +471,12 @@ func _mettre_a_jour_boite(delta: float) -> void:
 		rapport_change.emit(rapport)
 
 
+## L'accélération du rapport engagé (le 1er rapport sert aussi à l'arrêt).
+func acceleration_du_rapport() -> float:
+	var i := clampi(rapport - 1, 0, acceleration_par_rapport.size() - 1)
+	return acceleration_par_rapport[i]
+
+
 func rapport_texte() -> String:
 	return "R" if rapport < 0 else str(rapport)
 
@@ -544,7 +553,7 @@ func _conduire(delta: float) -> void:
 			var poussee_avant := freinage
 			if vitesse >= 0.0:
 				# En dérapage, l'accélération est très réduite : dériver coûte de la vitesse.
-				poussee_avant = acceleration * lerpf(1.0, acceleration_en_derapage, 1.0 - smoothstep(0.2, 1.0, _grip))
+				poussee_avant = acceleration_du_rapport() * lerpf(1.0, acceleration_en_derapage, 1.0 - smoothstep(0.2, 1.0, _grip))
 			vitesse = move_toward(vitesse, vitesse_max_actuelle() * gaz, poussee_avant * delta)
 		elif frein <= 0.0:
 			vitesse = move_toward(vitesse, 0.0, frottement * delta)
