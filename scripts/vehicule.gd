@@ -65,7 +65,7 @@ signal atterrissage(force: float)
 @export var style_bonus_vitesse := 25.0  ## m/s de vitesse max en plus à jauge pleine (environ 90 km/h)
 @export var style_delai_chute := 1.5  ## secondes sans dérapage avant que la jauge commence à baisser
 @export var style_chute := 8.0  ## par seconde, une fois le délai passé
-@export var style_perte_choc := 35.0  ## retiré à chaque vrai choc contre un mur (0 = aucune pénalité)
+@export var style_segments := 4  ## la barre est découpée en paliers égaux ; un vrai choc contre un mur fait redescendre au palier précédent
 
 @export_group("Apparence")
 ## Où se trouvent les yeux du pilote, dans le repère de la carrosserie (vue cockpit).
@@ -418,6 +418,12 @@ func cap_camera() -> float:
 	return _cap - _glisse * 0.75
 
 
+## Un choc contre un mur fait retomber la jauge au palier juste en dessous (à 66 % avec 4 paliers : 50 %).
+func _perdre_un_palier() -> void:
+	var palier := style_max / float(style_segments)
+	style = maxf((ceilf(style / palier - 0.0001) - 1.0) * palier, 0.0)
+
+
 ## La vitesse max du moment : celle de base, plus le bonus gagné avec la jauge Devilmaydrive.
 func vitesse_max_actuelle() -> float:
 	return vitesse_max + style_bonus_vitesse * clampf(style / style_max, 0.0, 1.0)
@@ -710,7 +716,7 @@ func _gerer_chocs(avant: Vector3) -> void:
 		if de_face > 0.1 and not _contact_mur:
 			mur_touche.emit(vitesse * de_face)
 			if vitesse * de_face >= 8.0:
-				style = maxf(style - style_perte_choc, 0.0)  # un vrai choc coûte du style
+				_perdre_un_palier()  # un vrai choc coûte un palier de style
 			_gerbe_choc(_point_mur, normale, avant, vitesse * de_face)
 			vitesse *= 1.0 - perte_choc * de_face
 			# L'obstacle nous dévie : on repart le long de sa paroi.
@@ -812,7 +818,7 @@ func _garder_sur_la_piste() -> void:
 		# La force du choc dépend de l'angle : de face ça fait mal, en frottant moins.
 		mur_touche.emit(vitesse * absf(sin(_cap)))
 		if vitesse * absf(sin(_cap)) >= 8.0:
-			style = maxf(style - style_perte_choc, 0.0)
+			_perdre_un_palier()
 		var cote := signf(position.x)
 		_gerbe_choc(global_position + Vector3(cote * 0.6, 0.4, 0.0), Vector3(-cote, 0.0, 0.0),
 			Vector3(-sin(_cap), 0.0, -cos(_cap)), vitesse * absf(sin(_cap)) + 10.0)

@@ -64,9 +64,9 @@ func _dessiner_barre() -> void:
 			var t := (a + b) * 0.5 / LARGEUR
 			draw_rect(Rect2(x0 + a, y0, b - a + 0.6, HAUTEUR), FROID.lerp(CHAUD, t))
 
-	# Quatre repères : la barre se lit en cinq paliers.
-	for i in range(1, 5):
-		var x := x0 + LARGEUR * i / 5.0
+	# Les repères de la barre : un choc contre un mur fait retomber au palier précédent.
+	for i in range(1, vehicule.style_segments):
+		var x := x0 + LARGEUR * i / float(vehicule.style_segments)
 		draw_line(Vector2(x, y0 + HAUTEUR * 0.6), Vector2(x, y0 + HAUTEUR), Color(1, 1, 1, 0.35), 1.5)
 
 	var couleur_cadre := Color(0.85, 0.9, 1.0, 0.55)
