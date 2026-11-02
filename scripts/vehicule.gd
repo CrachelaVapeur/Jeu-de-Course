@@ -287,6 +287,9 @@ func _ready() -> void:
 	add_child(_fumee)
 	_traces = preload("res://scripts/traces_pneus.gd").new()
 	add_child(_traces)
+	var sons := preload("res://scripts/sons_jeu.gd").new()
+	sons.vehicule = self
+	add_child(sons)
 	_creer_etincelles()
 
 
@@ -407,6 +410,11 @@ func cap_camera() -> float:
 	# Pendant un dérapage, la caméra regarde surtout la trajectoire : on voit le
 	# bolide de travers (comme dans OutRun) au lieu de rester collé derrière son nez.
 	return _cap - _glisse * 0.75
+
+
+## Vrai tant que le bolide frotte un mur (pour le son de raclement).
+func contact_mur() -> bool:
+	return _contact_mur
 
 
 ## Angle de glisse (radians) : positif quand le nez est tourné vers la gauche de la trajectoire.
