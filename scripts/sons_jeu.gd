@@ -11,8 +11,13 @@ extends Node
 
 @export var vehicule: Vehicule
 @export var dossier := "res://audio/sfx/"
+@export var dossier_musique := "res://audio/musique/"
+## Musique de la course (nom du fichier sans extension, .ogg de préférence). Vide = pas de musique.
+@export var piste_musique := "Floor_The_Pedal"
 
 @export_group("Volumes (dB)")
+@export var volume_musique := -12.0
+@export var entree_musique := 2.0  ## s : la musique monte doucement au début de la course
 @export var volume_ambiance := -20.0  ## bruit de fond : à peine audible, juste pour remplir
 @export var entree_ambiance := 1.5  ## s : l'ambiance monte doucement au début de la course
 @export var volume_choc := 0.0
@@ -29,6 +34,7 @@ extends Node
 
 const EXTENSIONS := [".ogg", ".wav", ".mp3"]
 
+var _musique: AudioStreamPlayer
 var _ambiance: AudioStreamPlayer
 var _choc: AudioStreamPlayer
 var _raclement: AudioStreamPlayer
@@ -45,6 +51,12 @@ var _niveau_boost := 0.0
 
 
 func _ready() -> void:
+	if piste_musique != "":
+		_musique = _creer(piste_musique, true, volume_musique, dossier_musique)
+		if _musique != null:
+			_musique.volume_db = -60.0
+			_musique.play()
+			create_tween().tween_property(_musique, "volume_db", volume_musique, entree_musique)
 	_ambiance = _creer("retro_ambience", true, volume_ambiance)
 	if _ambiance != null:
 		_ambiance.volume_db = -60.0
@@ -69,9 +81,10 @@ func _ready() -> void:
 
 
 ## Charge « dossier/nom » avec la première extension trouvée ; null si le fichier n'existe pas.
-func _creer(nom: String, boucle: bool, volume: float) -> AudioStreamPlayer:
+func _creer(nom: String, boucle: bool, volume: float, dossier_son := "") -> AudioStreamPlayer:
+	var racine := dossier if dossier_son == "" else dossier_son
 	for extension in EXTENSIONS:
-		var chemin: String = dossier + nom + extension
+		var chemin: String = racine + nom + extension
 		if not ResourceLoader.exists(chemin):
 			continue
 		var flux := load(chemin) as AudioStream
