@@ -308,6 +308,9 @@ func _ready() -> void:
 	var sons := preload("res://scripts/sons_jeu.gd").new()
 	sons.vehicule = self
 	add_child(sons)
+	var ralenti := preload("res://scripts/ralenti.gd").new()
+	ralenti.vehicule = self
+	add_child(ralenti)
 	_creer_etincelles()
 
 
