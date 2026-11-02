@@ -179,12 +179,12 @@ signal rapport_change(rapport: int)
 ## changeant de sens, l'arrière a de l'élan, balance en retard et dépasse un peu avant de se
 ## stabiliser (comme un vrai « flick »). Plus la raideur est grande, plus il réagit vite ;
 ## plus l'amortissement est petit, plus il balance (1 = aucune oscillation, comme avant).
-@export var raideur_glisse := 5.0  ## rad/s : rapidité de la réaction
-@export_range(0.2, 1.5) var amortissement_glisse := 0.35
+@export var raideur_glisse := 7.0  ## rad/s : rapidité de la réaction
+@export_range(0.2, 1.5) var amortissement_glisse := 0.5
 ## Inertie du nez : quand la trajectoire se met à tourner dans l'autre sens, le nez, lui, continue un
 ## instant dans son ancien élan (l'angle de glisse grandit un court moment avant de basculer).
 ## 0 = aucune inertie.
-@export var inertie_glisse := 3.0
+@export var inertie_glisse := 1.5
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 ## Pas de style pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
 ## (m/s) : rien en dessous du minimum, plein gain à partir de « vitesse_charge_pleine ».
