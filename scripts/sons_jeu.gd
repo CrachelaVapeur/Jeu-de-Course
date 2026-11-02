@@ -7,7 +7,7 @@ extends Node
 ## simplement muet. Les fichiers fournis sont provisoires (outils/generer_sons_provisoires.py).
 ##
 ## Noms attendus : choc_mur, raclement_mur (boucle), derapage (boucle), boost_depart,
-## boost_fin, atterrissage, changement_rapport.
+## boost_pendant (boucle, pendant tout le boost), boost_fin, atterrissage, changement_rapport.
 
 @export var vehicule: Vehicule
 @export var dossier := "res://audio/sfx/"
@@ -17,6 +17,9 @@ extends Node
 @export var volume_raclement := -6.0
 @export var volume_derapage := -4.0
 @export var volume_boost_depart := -2.0
+@export var volume_boost_pendant := -4.0
+@export var entree_boost_pendant := 0.15  ## s : le son monte en volume au départ du boost
+@export var sortie_boost_pendant := 0.35  ## s : et s'éteint à la fin
 @export var volume_boost_fin := -8.0
 @export var volume_atterrissage := -2.0
 @export var volume_rapport := -14.0
@@ -28,12 +31,14 @@ var _choc: AudioStreamPlayer
 var _raclement: AudioStreamPlayer
 var _derapage: AudioStreamPlayer
 var _boost_depart: AudioStreamPlayer
+var _boost_pendant: AudioStreamPlayer
 var _boost_fin: AudioStreamPlayer
 var _atterrissage: AudioStreamPlayer
 var _rapport: AudioStreamPlayer
 var _en_boost_avant := false
 var _niveau_derapage := 0.0  # 0 à 1, lissé
 var _niveau_raclement := 0.0
+var _niveau_boost := 0.0
 
 
 func _ready() -> void:
@@ -41,6 +46,7 @@ func _ready() -> void:
 	_raclement = _creer("raclement_mur", true, volume_raclement)
 	_derapage = _creer("derapage", true, volume_derapage)
 	_boost_depart = _creer("boost_depart", false, volume_boost_depart)
+	_boost_pendant = _creer("boost_pendant", true, volume_boost_pendant)
 	_boost_fin = _creer("boost_fin", false, volume_boost_fin)
 	_atterrissage = _creer("atterrissage", false, volume_atterrissage)
 	_rapport = _creer("changement_rapport", false, volume_rapport)
@@ -102,6 +108,10 @@ func _process(delta: float) -> void:
 	elif _en_boost_avant and not vehicule.en_boost:
 		_jouer(_boost_fin, volume_boost_fin, 1.0)
 	_en_boost_avant = vehicule.en_boost
+	# Pendant le boost : le son tourne en boucle, avec une montée et une descente douces.
+	var duree := entree_boost_pendant if vehicule.en_boost else sortie_boost_pendant
+	_niveau_boost = move_toward(_niveau_boost, 1.0 if vehicule.en_boost else 0.0, delta / maxf(duree, 0.01))
+	_regler_boucle(_boost_pendant, _niveau_boost, volume_boost_pendant, 1.0)
 
 	var vitesse := absf(vehicule.vitesse)
 	var rapport_vitesse := clampf(vitesse / vehicule.vitesse_max, 0.0, 1.0)
@@ -134,3 +144,4 @@ func _regler_boucle(lecteur: AudioStreamPlayer, niveau: float, volume: float, ha
 func _couper_boucles() -> void:
 	_niveau_derapage = 0.0
 	_niveau_raclement = 0.0
+	_niveau_boost = 0.0
