@@ -23,7 +23,7 @@ extends Camera3D
 ## que d'habitude.
 @export var distance_derapage := 5.2
 @export var decalage_derapage := 0.0  ## m : 0 = derrière le bolide ; > 0 = un peu de côté (3/4 arrière), à l'extérieur du virage
-@export var rapidite_derapage := 4.0  ## vitesse de la transition vers la caméra de dérapage
+@export var duree_transition_derapage := 0.8  ## s : durée du mouvement de caméra (démarre et finit en douceur, « ease in-out »)
 @export var fov_min := 68.0
 @export var fov_max := 112.0  ## atteint à pleine vitesse
 ## Caméra de boost : au départ du boost la caméra « décroche » (elle recule vite et le champ de
@@ -55,7 +55,8 @@ var _haut := Vector3.UP  # le « haut » de la caméra, lissé
 var _pente := 0.0  # angle de la route (en radians, > 0 en montée), lissé
 var _temps_boost := 0.0  # secondes écoulées depuis le départ du boost
 var _decrochage := 0.0  # 0 = caméra normale, 1 = décrochage maximal (lissé)
-var _derapage := 0.0  # 0 = caméra normale, 1 = caméra de dérapage (lissé)
+var _derapage_progres := 0.0  # avancée linéaire de la transition, 0 à 1
+var _derapage := 0.0  # 0 = caméra normale, 1 = caméra de dérapage (avec ease in-out)
 var _cote := 1.0  # de quel côté la caméra se place pendant un dérapage (lissé)
 var _place_libre := 1.0  # part de la distance voulue sans obstacle entre le bolide et la caméra
 var _reglages: Node  # l'autoload des réglages (la vue choisie y est gardée)
@@ -150,7 +151,9 @@ func _mettre_a_jour_decrochage(delta: float) -> void:
 func _placer_en_poursuite(arriere: Vector3, delta: float) -> void:
 	var loin := vue == 3
 	var drift_voulu := 1.0 if (cible.en_derapage and cible.is_on_floor()) else 0.0
-	_derapage = lerpf(_derapage, drift_voulu, 1.0 - exp(-rapidite_derapage * delta))
+	# La transition avance à vitesse constante, puis smoothstep la fait démarrer et finir en douceur.
+	_derapage_progres = move_toward(_derapage_progres, drift_voulu, delta / maxf(duree_transition_derapage, 0.01))
+	_derapage = smoothstep(0.0, 1.0, _derapage_progres)
 	var recul := lerpf((distance_loin if loin else distance) + _recul, distance_derapage + _recul * 0.3, _derapage)
 	recul += _decrochage * recul_boost
 	var haut_camera := hauteur_loin if loin else hauteur
