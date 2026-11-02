@@ -171,7 +171,16 @@ signal rapport_change(rapport: int)
 @export var maintien_courbure_gaz := 0.35  ## par seconde : volant lâché, grip bas, sous gaz : la courbure s'ouvre lentement
 @export var maintien_courbure_sans_gaz := 1.0  ## idem sans les gaz : lever le pied aide à redresser
 @export var maintien_courbure_grip := 7.0  ## idem à plein grip : on redresse tout de suite
-@export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
+## L'angle de glisse (le nez en travers) se comporte comme un ressort avec de l'inertie : en
+## changeant de sens, l'arrière a de l'élan, balance en retard et dépasse un peu avant de se
+## stabiliser (comme un vrai « flick »). Plus la raideur est grande, plus il réagit vite ;
+## plus l'amortissement est petit, plus il balance (1 = aucune oscillation, comme avant).
+@export var raideur_glisse := 7.0  ## rad/s : rapidité de la réaction
+@export_range(0.2, 1.5) var amortissement_glisse := 0.5
+## Inertie du nez : quand la trajectoire se met à tourner dans l'autre sens, le nez, lui, continue un
+## instant dans son ancien élan (l'angle de glisse grandit un court moment avant de basculer).
+## 0 = aucune inertie.
+@export var inertie_glisse := 1.5
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 ## Pas de style pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
 ## (m/s) : rien en dessous du minimum, plein gain à partir de « vitesse_charge_pleine ».
@@ -223,6 +232,7 @@ var _fumee: MultiMeshInstance3D  # nuages 3D low poly aux roues arrière
 var _grip := 1.0  # adhérence de l'arrière : 1 = normale, 0 = glisse totale
 var _temps_neutre := 0.0  # depuis combien de temps le volant est au neutre (s)
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
+var _vitesse_glisse := 0.0  # vitesse de variation de l'angle de glisse (rad/s)
 var _boost_en_attente := false  # un appui boost reçu, pas encore pris en compte par la physique
 var _style_attente := 0.0  # délai avant que la jauge Devilmaydrive commence à baisser
 var _ignorer_boost := false  # vrai après une perte de focus, jusqu'au relâchement de la touche
@@ -632,6 +642,7 @@ func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 ## courbure est forte. Aucun changement brusque : tout est continu en fonction du grip.
 func _conduire_avec_grip(brut: float, manoeuvre: float, delta: float) -> void:
 	var rotation_max := _rotation_max(manoeuvre)
+	var omega_avant := _omega
 	if absf(brut) > 0.1:
 		var cible := _volant * rotation_max
 		var pas := (cible - _omega) * (1.0 - exp(-inertie_lacet * delta))
@@ -652,7 +663,13 @@ func _conduire_avec_grip(brut: float, manoeuvre: float, delta: float) -> void:
 	if en_derapage and Input.get_action_strength("freiner") > 0.3:
 		angle *= 1.15  # freiner en dérapage déstabilise l'arrière
 	angle = minf(angle, angle_glisse_max)
-	_glisse = lerpf(_glisse, _sens_derapage * angle, 1.0 - exp(-reactivite_glisse * delta))
+	# Ressort amorti : l'angle est tiré vers sa cible mais garde sa vitesse (_vitesse_glisse).
+	# Le nez a de l'inertie : si la trajectoire tourne plus vite d'un côté, l'angle bouge dans l'autre sens.
+	_vitesse_glisse -= inertie_glisse * (_omega - omega_avant)
+	var raideur := minf(raideur_glisse, 25.0)  # au-delà, le calcul deviendrait instable
+	var acceleration_glisse := raideur * raideur * (_sens_derapage * angle - _glisse) - 2.0 * amortissement_glisse * raideur * _vitesse_glisse
+	_vitesse_glisse += acceleration_glisse * delta
+	_glisse += _vitesse_glisse * delta
 	if mode_glisse and en_boost and absf(_glisse) > 0.01:
 		# Le boost pousse dans l'axe du nez : la trajectoire tourne vers lui (le nez ne bouge pas).
 		var pas := clampf(_glisse, -correction_boost * delta, correction_boost * delta)
@@ -786,6 +803,7 @@ func _gerer_chocs(avant: Vector3) -> void:
 				_cap = atan2(-le_long.x, -le_long.z)
 				_cap_trajectoire = _cap
 				_glisse = 0.0
+				_vitesse_glisse = 0.0
 				_omega = 0.0
 				_grip = 1.0
 				en_derapage = false
@@ -869,6 +887,7 @@ func _reapparaitre(saut_rate := false) -> void:
 	en_derapage = false
 	_grip = 1.0
 	_glisse = 0.0
+	_vitesse_glisse = 0.0
 	_omega = 0.0
 	_volant = 0.0
 	velocity = Vector3.ZERO
@@ -993,6 +1012,7 @@ func _recommencer() -> void:
 	en_derapage = false
 	_grip = 1.0
 	_glisse = 0.0
+	_vitesse_glisse = 0.0
 	_omega = 0.0
 	_volant = 0.0
 	velocity = Vector3.ZERO
