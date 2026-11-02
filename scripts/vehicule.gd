@@ -161,6 +161,10 @@ signal rapport_change(rapport: int)
 ## Volant lâché : le grip ne commence à remonter qu'après ce délai (s). Un petit relâchement ou le
 ## jeu d'un stick analogique ne fait plus sortir du dérapage en plein long virage.
 @export var delai_sortie_derapage := 0.4
+## Sortie rapide : volant au neutre ET bolide à peu près dans l'axe de la route (le nez presque droit,
+## plus de virage) = le dérapage est fini, le grip revient vite et sans délai.
+@export var recuperation_alignee := 3.0  ## par seconde
+@export var angle_aligne := 0.2  ## rad : au-dessous de cet angle de glisse on est « dans l'axe »
 @export var recuperation_en_virage := 0.05  ## par seconde : idem tant qu'on braque (le dérapage dure le temps du virage)
 @export var angle_entree_lent := 0.35  ## radians : angle de glisse à pleine courbure, à basse vitesse
 @export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
@@ -175,12 +179,12 @@ signal rapport_change(rapport: int)
 ## changeant de sens, l'arrière a de l'élan, balance en retard et dépasse un peu avant de se
 ## stabiliser (comme un vrai « flick »). Plus la raideur est grande, plus il réagit vite ;
 ## plus l'amortissement est petit, plus il balance (1 = aucune oscillation, comme avant).
-@export var raideur_glisse := 7.0  ## rad/s : rapidité de la réaction
-@export_range(0.2, 1.5) var amortissement_glisse := 0.5
+@export var raideur_glisse := 5.0  ## rad/s : rapidité de la réaction
+@export_range(0.2, 1.5) var amortissement_glisse := 0.35
 ## Inertie du nez : quand la trajectoire se met à tourner dans l'autre sens, le nez, lui, continue un
 ## instant dans son ancien élan (l'angle de glisse grandit un court moment avant de basculer).
 ## 0 = aucune inertie.
-@export var inertie_glisse := 1.5
+@export var inertie_glisse := 3.0
 @export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 ## Pas de style pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
 ## (m/s) : rien en dessous du minimum, plein gain à partir de « vitesse_charge_pleine ».
@@ -630,7 +634,10 @@ func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 			# vite, même en braquant, sinon on resterait en glisse en réaccélérant.
 			_grip = minf(_grip + 3.0 * delta, 1.0)
 		else:
+			var alignee := absf(brut) <= 0.1 and absf(_glisse) < angle_aligne and absf(_omega) < 0.2
 			var rec := recuperation_en_virage if (absf(brut) > 0.1 or _temps_neutre < delai_sortie_derapage) else recuperation
+			if alignee:
+				rec = recuperation_alignee
 			_grip = minf(_grip + rec * delta, 1.0)
 
 	en_derapage = _grip < seuil_derapage
