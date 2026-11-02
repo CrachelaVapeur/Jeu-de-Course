@@ -22,6 +22,8 @@ var _liste_echelle: OptionButton
 var _liste_msaa: OptionButton
 var _liste_manette: OptionButton
 var _liste_texte: OptionButton
+var _curseur_sfx: CurseurVolume
+var _curseur_musique: CurseurVolume
 var _defilement: ScrollContainer  # contient la page des réglages
 var _aide: Label  # le mot d'aide en bas du menu (noms des boutons)
 var _cases: Dictionary = {}  # nom du réglage -> CheckButton
@@ -146,6 +148,13 @@ func _construire_page_reglages() -> void:
 	_liste_texte.item_selected.connect(_sur_taille_texte)
 	_page_reglages.add_child(_ligne("Text size", _liste_texte))
 
+	_curseur_sfx = CurseurVolume.new()
+	_curseur_sfx.preparer("SFX volume", "volume_sfx")
+	_page_reglages.add_child(_curseur_sfx)
+	_curseur_musique = CurseurVolume.new()
+	_curseur_musique.preparer("Music volume", "volume_musique")
+	_page_reglages.add_child(_curseur_musique)
+
 	_ajouter_case("conduite_glisse", "Slide handling (test: Wipeout x Art of Rally)")
 	_ajouter_case("afficher_guide", "Controls guide (top left)")
 	_ajouter_case("afficher_fps", "Show FPS counter")
@@ -188,6 +197,8 @@ func _remplir_reglages() -> void:
 	_liste_msaa.select(_g.msaa)
 	_liste_manette.select(_g.style_manette)
 	_liste_texte.select(_g.taille_texte)
+	_curseur_sfx.actualiser()
+	_curseur_musique.actualiser()
 	for nom in _cases:
 		(_cases[nom] as CheckButton).button_pressed = _g.get(nom)
 	_en_chargement = false

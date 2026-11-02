@@ -19,6 +19,10 @@ const ECHELLES: Array[float] = [0.5, 0.67, 0.75, 1.0]
 const TAILLES_TEXTE: Array[float] = [1.0, 1.4, 1.8]
 const NOMS_TAILLES_TEXTE: Array[String] = ["Normal", "Large", "Extra large"]
 
+## Bus audio créés au démarrage : les sons du jeu y sont envoyés (voir sons_jeu.gd, son_moteur.gd).
+const BUS_SFX := &"SFX"
+const BUS_MUSIQUE := &"Music"
+
 ## Valeurs de chaque préréglage : bas, moyen, élevé.
 const PREREGLAGES := [
 	{"echelle": 0.5, "msaa": 0, "ombres": false, "glow": false, "contours": false, "effets": false},
@@ -38,12 +42,16 @@ var conduite_glisse := false  ## conduite d'essai « glisse » (voir vehicule.gd
 var vue_camera := 0  ## dernière vue choisie (voir camera_poursuite.gd), gardée d'une course à l'autre
 var style_manette := 0  ## noms des boutons affichés : 0 Auto, 1 Xbox, 2 Nintendo, 3 PlayStation (voir boutons.gd)
 var taille_texte := 1 if OS.has_feature("mobile") else 0  ## indice dans TAILLES_TEXTE
+var volume_sfx := 1.0  ## volume des bruitages et du moteur, de 0 à 1 (bus « SFX »)
+var volume_musique := 1.0  ## volume de la musique, de 0 à 1 (bus « Music »)
 
 var _label_fps: Label
 
 
 func _ready() -> void:
 	charger()
+	_creer_bus()
+	appliquer_audio()
 	_creer_compteur_fps()
 	get_tree().node_added.connect(_sur_noeud_ajoute)
 	appliquer_viewport()
@@ -85,9 +93,28 @@ func appliquer_viewport() -> void:
 	racine.content_scale_factor = TAILLES_TEXTE[clampi(taille_texte, 0, TAILLES_TEXTE.size() - 1)]
 
 
+## Crée les bus « SFX » et « Music » (sans fichier de bus à gérer dans l'éditeur).
+func _creer_bus() -> void:
+	for nom in [BUS_SFX, BUS_MUSIQUE]:
+		if AudioServer.get_bus_index(nom) == -1:
+			AudioServer.add_bus()
+			AudioServer.set_bus_name(AudioServer.bus_count - 1, nom)  # envoyé vers Master par défaut
+
+
+## Applique les deux volumes (0 à 1) aux bus ; 0 coupe complètement.
+func appliquer_audio() -> void:
+	for bus in {BUS_SFX: volume_sfx, BUS_MUSIQUE: volume_musique}.keys():
+		var indice := AudioServer.get_bus_index(bus)
+		if indice == -1:
+			continue
+		var volume: float = volume_sfx if bus == BUS_SFX else volume_musique
+		AudioServer.set_bus_mute(indice, volume <= 0.001)
+		AudioServer.set_bus_volume_db(indice, linear_to_db(maxf(volume, 0.001)))
+
+
 func sauvegarder() -> void:
 	var cfg := ConfigFile.new()
-	for nom in ["echelle", "msaa", "ombres", "glow", "contours", "effets", "afficher_fps", "afficher_guide", "conduite_glisse", "vue_camera", "style_manette", "taille_texte"]:
+	for nom in ["echelle", "msaa", "ombres", "glow", "contours", "effets", "afficher_fps", "afficher_guide", "conduite_glisse", "vue_camera", "style_manette", "taille_texte", "volume_sfx", "volume_musique"]:
 		cfg.set_value("graphismes", nom, get(nom))
 	cfg.save(FICHIER)
 
@@ -108,6 +135,8 @@ func charger() -> void:
 	vue_camera = cfg.get_value("graphismes", "vue_camera", vue_camera)
 	style_manette = cfg.get_value("graphismes", "style_manette", style_manette)
 	taille_texte = cfg.get_value("graphismes", "taille_texte", taille_texte)
+	volume_sfx = clampf(cfg.get_value("graphismes", "volume_sfx", volume_sfx), 0.0, 1.0)
+	volume_musique = clampf(cfg.get_value("graphismes", "volume_musique", volume_musique), 0.0, 1.0)
 
 
 ## Appelé pour chaque nœud qui entre dans l'arbre : coupe les ombres, le halo

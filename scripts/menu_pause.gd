@@ -17,6 +17,8 @@ var _bouton_conduite: Button
 var _bouton_guide: Button
 var _bouton_manette: Button
 var _bouton_texte: Button
+var _curseur_sfx: CurseurVolume
+var _curseur_musique: CurseurVolume
 var _defilement: ScrollContainer
 var _colonne: VBoxContainer
 var _explication: Label
@@ -67,6 +69,12 @@ func _ready() -> void:
 	_bouton_guide = _bouton(colonne, "", _changer_guide)
 	_bouton_manette = _bouton(colonne, "", _changer_manette)
 	_bouton_texte = _bouton(colonne, "", _changer_taille_texte)
+	_curseur_sfx = CurseurVolume.new()
+	_curseur_sfx.preparer("SFX volume", "volume_sfx")
+	colonne.add_child(_curseur_sfx)
+	_curseur_musique = CurseurVolume.new()
+	_curseur_musique.preparer("Music volume", "volume_musique")
+	colonne.add_child(_curseur_musique)
 	colonne.add_child(HSeparator.new())
 	_bouton(colonne, "Main menu", _vers_le_menu)
 
@@ -161,6 +169,8 @@ func _actualiser() -> void:
 		nom_style += " (%s)" % Boutons.NOMS_STYLES[style]  # ce qu'Auto a deviné
 	_bouton_manette.text = "Controller buttons: %s" % nom_style
 	_bouton_texte.text = "Text size: %s" % _g.NOMS_TAILLES_TEXTE[_g.taille_texte]
+	_curseur_sfx.actualiser()
+	_curseur_musique.actualiser()
 
 
 func _bouton(parent: Control, texte: String, action: Callable) -> Button:

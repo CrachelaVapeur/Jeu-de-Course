@@ -52,7 +52,7 @@ var _niveau_boost := 0.0
 
 func _ready() -> void:
 	if piste_musique != "":
-		_musique = _creer(piste_musique, true, volume_musique, dossier_musique)
+		_musique = _creer(piste_musique, true, volume_musique, dossier_musique, true)
 		if _musique != null:
 			_musique.volume_db = -60.0
 			_musique.play()
@@ -81,7 +81,7 @@ func _ready() -> void:
 
 
 ## Charge « dossier/nom » avec la première extension trouvée ; null si le fichier n'existe pas.
-func _creer(nom: String, boucle: bool, volume: float, dossier_son := "") -> AudioStreamPlayer:
+func _creer(nom: String, boucle: bool, volume: float, dossier_son := "", est_musique := false) -> AudioStreamPlayer:
 	var racine := dossier if dossier_son == "" else dossier_son
 	for extension in EXTENSIONS:
 		var chemin: String = racine + nom + extension
@@ -95,6 +95,7 @@ func _creer(nom: String, boucle: bool, volume: float, dossier_son := "") -> Audi
 		var lecteur := AudioStreamPlayer.new()
 		lecteur.stream = flux
 		lecteur.volume_db = volume
+		lecteur.bus = Graphismes.BUS_MUSIQUE if est_musique else Graphismes.BUS_SFX  # réglages de volume du menu
 		add_child(lecteur)
 		return lecteur
 	return null

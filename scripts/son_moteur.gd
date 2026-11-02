@@ -54,6 +54,7 @@ func _ready() -> void:
 	generateur.mix_rate = TAUX
 	generateur.buffer_length = 0.1
 	stream = generateur
+	bus = Graphismes.BUS_SFX  # le curseur « SFX volume » des réglages règle aussi le moteur
 	_volume_normal = volume_db
 	play()
 	_lecture = get_stream_playback()
