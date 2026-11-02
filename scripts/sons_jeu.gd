@@ -6,13 +6,15 @@ extends Node
 ## même nom (.wav ou .ogg, au choix ; .ogg est plus léger). Si un fichier manque, ce son est
 ## simplement muet. Les fichiers fournis sont provisoires (outils/generer_sons_provisoires.py).
 ##
-## Noms attendus : choc_mur, raclement_mur (boucle), derapage (boucle), boost_depart,
+## Noms attendus : retro_ambience (boucle, ambiance de fond pendant toute la partie), choc_mur, raclement_mur (boucle), derapage (boucle), boost_depart,
 ## boost_pendant (boucle, pendant tout le boost), boost_fin, atterrissage, changement_rapport.
 
 @export var vehicule: Vehicule
 @export var dossier := "res://audio/sfx/"
 
 @export_group("Volumes (dB)")
+@export var volume_ambiance := -20.0  ## bruit de fond : à peine audible, juste pour remplir
+@export var entree_ambiance := 1.5  ## s : l'ambiance monte doucement au début de la course
 @export var volume_choc := 0.0
 @export var volume_raclement := -6.0
 @export var volume_derapage := -4.0
@@ -27,6 +29,7 @@ extends Node
 
 const EXTENSIONS := [".ogg", ".wav", ".mp3"]
 
+var _ambiance: AudioStreamPlayer
 var _choc: AudioStreamPlayer
 var _raclement: AudioStreamPlayer
 var _derapage: AudioStreamPlayer
@@ -42,6 +45,11 @@ var _niveau_boost := 0.0
 
 
 func _ready() -> void:
+	_ambiance = _creer("retro_ambience", true, volume_ambiance)
+	if _ambiance != null:
+		_ambiance.volume_db = -60.0
+		_ambiance.play()
+		create_tween().tween_property(_ambiance, "volume_db", volume_ambiance, entree_ambiance)
 	_choc = _creer("choc_mur", false, volume_choc)
 	_raclement = _creer("raclement_mur", true, volume_raclement)
 	_derapage = _creer("derapage", true, volume_derapage)
