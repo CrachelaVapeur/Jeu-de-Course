@@ -149,7 +149,7 @@ signal rapport_change(rapport: int)
 ##   lâché = on garde l'élan) et plus elle change progressivement (jamais de saut de côté) ;
 ## - en dessous de « seuil_derapage », on est « en dérapage » (fumée, recharge de boost).
 @export var vitesse_min_derapage := 41.7  ## m/s (150 km/h) : en dessous, on ne peut pas ENTRER en dérapage
-@export var vitesse_garde_derapage := 30.6  ## m/s (110 km/h) : un dérapage déjà lancé tient jusque-là, puis le grip revient
+@export var vitesse_garde_derapage := 25.0  ## m/s (90 km/h) : un dérapage déjà lancé tient jusque-là, puis le grip revient
 ## Part de l'accélération qui reste pendant un dérapage : dériver coûte de la vitesse, on ne peut
 ## pas le tenir gratuitement à bas régime en gardant le gaz à fond. 1 = aucune pénalité.
 @export var acceleration_en_derapage := 0.2
@@ -158,6 +158,9 @@ signal rapport_change(rapport: int)
 @export var grip_frein_a_main := 0.2  ## grip maintenu tant qu'Espace est tenu
 @export var grip_frein := 0.5  ## grip maintenu tant que le frein est tenu en virage
 @export var recuperation := 0.45  ## par seconde : le grip remonte quand le volant est au neutre
+## Volant lâché : le grip ne commence à remonter qu'après ce délai (s). Un petit relâchement ou le
+## jeu d'un stick analogique ne fait plus sortir du dérapage en plein long virage.
+@export var delai_sortie_derapage := 0.4
 @export var recuperation_en_virage := 0.05  ## par seconde : idem tant qu'on braque (le dérapage dure le temps du virage)
 @export var angle_entree_lent := 0.35  ## radians : angle de glisse à pleine courbure, à basse vitesse
 @export var angle_entree_vite := 0.75  ## radians : idem à pleine vitesse (le bolide se met presque en travers)
@@ -169,7 +172,7 @@ signal rapport_change(rapport: int)
 @export var maintien_courbure_sans_gaz := 1.0  ## idem sans les gaz : lever le pied aide à redresser
 @export var maintien_courbure_grip := 7.0  ## idem à plein grip : on redresse tout de suite
 @export var reactivite_glisse := 6.0  ## lissage de l'angle de glisse
-@export var perte_vitesse_derapage := 0.25  ## part de vitesse perdue par seconde à glisse maximale
+@export var perte_vitesse_derapage := 0.18  ## part de vitesse perdue par seconde à glisse maximale
 ## Pas de style pour un dérapage lent : le gain monte progressivement entre ces deux vitesses
 ## (m/s) : rien en dessous du minimum, plein gain à partir de « vitesse_charge_pleine ».
 @export var vitesse_charge_min := 38.9  ## 140 km/h
@@ -218,6 +221,7 @@ var _sens_derapage := 0.0  # -1 / +1 : côté du dérapage en cours (+1 = nez à
 var _traces: MultiMeshInstance3D  # traces noires sur la route
 var _fumee: MultiMeshInstance3D  # nuages 3D low poly aux roues arrière
 var _grip := 1.0  # adhérence de l'arrière : 1 = normale, 0 = glisse totale
+var _temps_neutre := 0.0  # depuis combien de temps le volant est au neutre (s)
 var _glisse := 0.0  # angle entre la trajectoire et le nez, en dérapage
 var _boost_en_attente := false  # un appui boost reçu, pas encore pris en compte par la physique
 var _style_attente := 0.0  # délai avant que la jauge Devilmaydrive commence à baisser
@@ -580,6 +584,7 @@ func _rotation_max(manoeuvre: float) -> float:
 func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 	var appui := _appui_en_attente or Input.is_action_just_pressed("freiner") or Input.is_action_just_pressed("deraper")
 	_appui_en_attente = false
+	_temps_neutre = 0.0 if absf(brut) > 0.1 else _temps_neutre + delta
 
 	# Pour entrer en dérapage il faut de la vitesse ; une fois dedans, on tient plus bas.
 	var vitesse_requise := vitesse_garde_derapage if en_derapage else vitesse_min_derapage
@@ -615,7 +620,7 @@ func _mettre_a_jour_grip(brut: float, manoeuvre: float, delta: float) -> void:
 			# vite, même en braquant, sinon on resterait en glisse en réaccélérant.
 			_grip = minf(_grip + 3.0 * delta, 1.0)
 		else:
-			var rec := recuperation_en_virage if absf(brut) > 0.1 else recuperation
+			var rec := recuperation_en_virage if (absf(brut) > 0.1 or _temps_neutre < delai_sortie_derapage) else recuperation
 			_grip = minf(_grip + rec * delta, 1.0)
 
 	en_derapage = _grip < seuil_derapage
