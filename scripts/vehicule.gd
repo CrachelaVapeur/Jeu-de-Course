@@ -215,6 +215,8 @@ var en_boost := false
 var gaz := 0.0
 ## 0 = conduite normale, 1 = plein effet de boost. La caméra (champ de vision)
 ## et le son (concentration) s'en servent pour rester synchronisés.
+## 0 à 1 : l'anticipation avant le boost (temps ralenti, caméra qui se rapproche). Voir ralenti.gd.
+var anticipation_boost := 0.0
 var distorsion := 0.0
 ## 0 au début du boost, 1 quand il pousse à fond (voir duree_montee_boost).
 var montee_boost := 0.0

@@ -34,6 +34,8 @@ extends Camera3D
 @export var fov_boost_pic := 179.0  ## champ de vision au plus fort du décrochage (Godot plafonne à 179)
 @export var attaque_boost := 0.25  ## s : temps pour décrocher au départ du boost
 @export var courbe_retour := 1.0  ## 1 = retour régulier ; > 1 : revient vite puis finit doucement ; < 1 : reste loin plus longtemps
+@export var rapprochement_anticipation := 2.2  ## m : la caméra se rapproche pendant l'anticipation (temps ralenti)
+@export var fov_anticipation := -18.0  ## degrés : le champ de vision se resserre pendant l'anticipation
 @export var recul_max := 1.0  ## recul dû aux accélérations normales (pas au boost)
 @export var secousse_pleine_vitesse := 0.08  ## tremblement en plein boost (monte progressivement avec la vitesse)
 ## Taille de la secousse à l'écran : part de la demi-hauteur de l'image par unité de force.
@@ -109,8 +111,8 @@ func _physics_process(delta: float) -> void:
 	var ratio := clampf(cible.vitesse / cible.vitesse_boost, 0.0, 1.0)
 	var fov_voulu := lerpf(fov_min, fov_max, pow(ratio, 1.4))
 	# Pendant le boost, le champ de vision s'ouvre au maximum puis revient avec la caméra.
-	fov_voulu = lerpf(fov_voulu, fov_boost_pic, _decrochage)
-	var rapidite_fov := 14.0 if (cible.en_boost or _decrochage > 0.01) else 4.0
+	fov_voulu = lerpf(fov_voulu, fov_boost_pic, _decrochage) + fov_anticipation * cible.anticipation_boost
+	var rapidite_fov := 14.0 if (cible.en_boost or _decrochage > 0.01 or cible.anticipation_boost > 0.01) else 4.0
 	fov = lerpf(fov, fov_voulu, 1.0 - exp(-rapidite_fov * delta))
 
 	# 4. Tremblements : permanents en boost, plus forts lors des chocs.
@@ -135,7 +137,9 @@ func _physics_process(delta: float) -> void:
 func _mettre_a_jour_decrochage(delta: float) -> void:
 	var voulu := 0.0
 	if cible.en_boost:
-		_temps_boost += delta
+		# Pendant l'anticipation (temps ralenti, caméra proche), le décrochage attend son tour.
+		if cible.anticipation_boost < 0.01:
+			_temps_boost += delta
 		var duree := maxf(cible.duree_boost, attaque_boost + 0.1)
 		if _temps_boost < attaque_boost:
 			voulu = smoothstep(0.0, 1.0, _temps_boost / attaque_boost)
@@ -155,7 +159,7 @@ func _placer_en_poursuite(arriere: Vector3, delta: float) -> void:
 	_derapage_progres = move_toward(_derapage_progres, drift_voulu, delta / maxf(duree_transition_derapage, 0.01))
 	_derapage = smoothstep(0.0, 1.0, _derapage_progres)
 	var recul := lerpf((distance_loin if loin else distance) + _recul, distance_derapage + _recul * 0.3, _derapage)
-	recul += _decrochage * recul_boost
+	recul += _decrochage * recul_boost - cible.anticipation_boost * rapprochement_anticipation
 	var haut_camera := hauteur_loin if loin else hauteur
 	# Côté du plan : à l'extérieur du virage, là où on voit le flanc de la voiture.
 	_cote = lerpf(_cote, -signf(cible.glisse_signee()) if absf(cible.glisse_signee()) > 0.02 else _cote, 1.0 - exp(-3.0 * delta))

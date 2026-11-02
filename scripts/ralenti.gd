@@ -1,72 +1,68 @@
 extends Node
-## Petits ralentis (« slow motion ») sur les gros événements : un choc violent contre un mur,
-## un atterrissage brutal. Le jeu ralentit net, tient un instant, puis reprend sa vitesse
-## normale en douceur. Plus c'est violent, plus le ralenti est fort.
-## Les réglages sont ci-dessous ; décoche « actif » pour tout couper.
+## L'anticipation du boost : à l'appui, le temps ralentit presque à l'arrêt, la caméra se rapproche
+## (et le champ de vision se resserre), le temps de « charger »... puis le temps reprend et
+## l'animation normale du boost se déclenche (la caméra décroche, le champ de vision s'ouvre).
+## La caméra lit « vehicule.anticipation_boost » (0 = rien, 1 = au plus près) ; voir camera_poursuite.gd.
+## Tout se mesure en temps réel (le ralenti ne rallonge pas l'anticipation).
 
 @export var vehicule: Vehicule
 @export var actif := true
-## Pause entre deux ralentis (s), pour ne pas ralentir à chaque frottement.
-@export var pause_entre_ralentis := 2.0
+@export var echelle := 0.15  ## vitesse du jeu pendant l'anticipation (1 = normal, 0.15 = très lent)
+@export var entree := 0.08  ## s : temps pour ralentir
+@export var tenue := 0.35  ## s : durée au plus lent (la caméra reste près)
+@export var sortie := 0.15  ## s : temps pour reprendre la vitesse normale
 ## Le son ralentit aussi (0 = pas du tout, 1 = autant que le jeu).
-@export_range(0.0, 1.0) var part_son := 0.5
-
-@export_group("Choc contre un mur")
-@export var seuil_choc := 30.0  ## force minimale (m/s de vitesse de face) ; 30 = environ 110 km/h de face
-@export var echelle_choc := 0.3  ## vitesse du jeu au plus fort du ralenti (1 = normal)
-@export var tenue_choc := 0.12  ## s : durée au plus lent
-@export var retour_choc := 0.4  ## s : durée pour revenir à la vitesse normale
-
-@export_group("Atterrissage brutal")
-@export var seuil_atterrissage := 22.0  ## vitesse de chute minimale (m/s)
-@export var echelle_atterrissage := 0.5
-@export var tenue_atterrissage := 0.1
-@export var retour_atterrissage := 0.3
+@export_range(0.0, 1.0) var part_son := 0.6
 
 var _tween: Tween
-var _libre_a := 0.0  # heure (temps réel, en s) à partir de laquelle un nouveau ralenti est permis
+var _boost_avant := false
 
 
 func _ready() -> void:
-	if vehicule == null:
-		return
-	vehicule.mur_touche.connect(func(force: float) -> void:
-		_declencher(force, seuil_choc, echelle_choc, tenue_choc, retour_choc))
-	vehicule.atterrissage.connect(func(force: float) -> void:
-		_declencher(force, seuil_atterrissage, echelle_atterrissage, tenue_atterrissage, retour_atterrissage))
-	vehicule.teleporte.connect(func(_d: Vector3) -> void: _remettre_normal())
+	if vehicule != null:
+		vehicule.teleporte.connect(func(_d: Vector3) -> void: _remettre_normal())
 
 
 func _exit_tree() -> void:
 	_remettre_normal()
 
 
-## « force » doit dépasser « seuil » ; à 2 fois le seuil (ou plus) le ralenti est à fond.
-func _declencher(force: float, seuil: float, echelle: float, tenue: float, retour: float) -> void:
-	if not actif or force < seuil or get_tree().paused:
+func _process(_delta: float) -> void:
+	if vehicule == null:
 		return
-	var maintenant := Time.get_ticks_msec() / 1000.0
-	if maintenant < _libre_a:
-		return
-	_libre_a = maintenant + tenue + retour + pause_entre_ralentis
-	var intensite := clampf((force - seuil) / seuil, 0.0, 1.0)
-	var vitesse_jeu := lerpf(lerpf(1.0, echelle, 0.6), echelle, intensite)
+	if vehicule.en_boost and not _boost_avant and actif and not get_tree().paused:
+		_lancer()
+	_boost_avant = vehicule.en_boost
+
+
+func _lancer() -> void:
 	if _tween != null:
 		_tween.kill()
-	_regler(vitesse_jeu)
+	var total := entree + tenue + sortie
 	# Le tween ignore le ralenti du jeu : il dure en temps réel.
 	_tween = create_tween().set_ignore_time_scale(true)
-	_tween.tween_interval(tenue)
-	_tween.tween_method(_regler, vitesse_jeu, 1.0, retour).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_tween.tween_method(_animer, 0.0, total, total)
+	_tween.tween_callback(_remettre_normal)
 
 
-func _regler(vitesse_jeu: float) -> void:
-	Engine.time_scale = vitesse_jeu
-	AudioServer.playback_speed_scale = lerpf(1.0, vitesse_jeu, part_son)
+## t = temps réel écoulé depuis l'appui.
+func _animer(t: float) -> void:
+	var k := 0.0  # 0 = normal, 1 = anticipation à fond
+	if t < entree:
+		k = ease(t / entree, 0.4)
+	elif t < entree + tenue:
+		k = 1.0
+	else:
+		k = 1.0 - smoothstep(0.0, 1.0, (t - entree - tenue) / sortie)
+	vehicule.anticipation_boost = k
+	Engine.time_scale = lerpf(1.0, echelle, k)
+	AudioServer.playback_speed_scale = lerpf(1.0, Engine.time_scale, part_son)
 
 
 func _remettre_normal() -> void:
 	if _tween != null:
 		_tween.kill()
+	if vehicule != null:
+		vehicule.anticipation_boost = 0.0
 	Engine.time_scale = 1.0
 	AudioServer.playback_speed_scale = 1.0
